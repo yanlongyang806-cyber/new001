@@ -301,10 +301,12 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="zlibvc.vcxproj">
-      <Project>{8fd826f8-3739-44e6-8cc8-997122e53b8d}</Project>
+      <Project>{8fd826f8-3739-44e6-8cc8-997122e53b8d}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
 </Project>

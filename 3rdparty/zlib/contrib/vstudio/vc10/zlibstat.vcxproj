@@ -414,4 +414,5 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
 </Project>

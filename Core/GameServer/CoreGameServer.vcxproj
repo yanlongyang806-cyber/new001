@@ -59,12 +59,9 @@
       <OptimizeReferences>false</OptimizeReferences>
       <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
     </Link>
-    <PreBuildEvent>
-      <Command>..\..\utilities\bin\structparser X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X $(VCInstallDir) X $(SolutionPath)</Command>
-    </PreBuildEvent>
+    
     <PostBuildEvent>
-      <Command>
-      </Command>
+      
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Full Debug|Win32'">
@@ -82,9 +79,7 @@
       <OptimizeReferences>false</OptimizeReferences>
       <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
     </Link>
-    <PreBuildEvent>
-      <Command>..\..\utilities\bin\structparser X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X $(VCInstallDir) X $(SolutionPath)</Command>
-    </PreBuildEvent>
+    
     <ResourceCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <Culture>0x0409</Culture>
@@ -112,43 +107,53 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\CrossRoads\GameServerLib\GameServerLib.vcxproj">
-      <Project>{99999999-9ad9-4149-9cbd-07ba24320884}</Project>
+      <Project>{99999999-9ad9-4149-9cbd-07ba24320884}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\libs\AILib\AILib.vcxproj">
-      <Project>{10980900-d4e8-420b-ade5-06afddd419bf}</Project>
+      <Project>{10980900-d4e8-420b-ade5-06afddd419bf}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\libs\ContentLib\ContentLib.vcxproj">
-      <Project>{869105e2-8af2-4e48-a4d3-7b3e31441777}</Project>
+      <Project>{869105e2-8af2-4e48-a4d3-7b3e31441777}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\libs\HttpLib\HttpLib.vcxproj">
-      <Project>{2acc94ec-3e38-48bd-b97f-5b46328a4aef}</Project>
+      <Project>{2acc94ec-3e38-48bd-b97f-5b46328a4aef}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\libs\PatchClientLib\PatchClientLib.vcxproj">
-      <Project>{487db8d6-6faf-4e86-9800-75088911a703}</Project>
+      <Project>{487db8d6-6faf-4e86-9800-75088911a703}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\libs\ServerLib\ServerLib.vcxproj">
-      <Project>{dd475a7c-b1d4-43c4-acb7-d73c24be1eb7}</Project>
+      <Project>{dd475a7c-b1d4-43c4-acb7-d73c24be1eb7}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\libs\StructParserStub\StructParserStub.vcxproj">
-      <Project>{1d29e421-93b2-4e32-9186-7fafc3971c5b}</Project>
+      <Project>{1d29e421-93b2-4e32-9186-7fafc3971c5b}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\libs\UtilitiesLib\UtilitiesLib.vcxproj">
-      <Project>{a6741f6e-5476-4f9f-9d65-62b54aaf1d08}</Project>
+      <Project>{a6741f6e-5476-4f9f-9d65-62b54aaf1d08}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\..\libs\WorldLib\WorldLib.vcxproj">
-      <Project>{e9aeb79e-085b-4392-a53f-8a9c609e8385}</Project>
+      <Project>{e9aeb79e-085b-4392-a53f-8a9c609e8385}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
 </Project>

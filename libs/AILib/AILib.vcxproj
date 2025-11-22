@@ -45,12 +45,9 @@
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>false</TreatWarningAsError>
     </ClCompile>
-    <PreBuildEvent>
-      <Command>..\..\utilities\bin\structparser X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X $(VCInstallDir) X $(SolutionPath)</Command>
-    </PreBuildEvent>
+    
     <PostBuildEvent>
-      <Command>
-      </Command>
+      
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Full Debug|Win32'">
@@ -59,9 +56,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;USEZLIB;_CRTDBG_MAP_ALLOC;AILIB=1;GAMESERVER=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <WarningLevel>Level4</WarningLevel>
     </ClCompile>
-    <PreBuildEvent>
-      <Command>..\..\utilities\bin\structparser X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X $(VCInstallDir) X $(SolutionPath)</Command>
-    </PreBuildEvent>
+    
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="aiAggro.c" />
@@ -258,11 +253,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\StructParserStub\StructParserStub.vcxproj">
-      <Project>{1d29e421-93b2-4e32-9186-7fafc3971c5b}</Project>
+      <Project>{1d29e421-93b2-4e32-9186-7fafc3971c5b}<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
+</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+<PreBuildEvent><Message>StructParser TEMP</Message><Command>"$(TEMP)\StructParser.exe" X $(ProjectDir) X $(ProjectFileName) X $(Platform) X $(Configuration) X "$(VCInstallDir)" X "$(SolutionPath)"</Command></PreBuildEvent>
 </Project>
