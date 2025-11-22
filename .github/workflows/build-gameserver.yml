@@ -9,44 +9,24 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025
 
     steps:
-    - name: Checkout Repo
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 安装 VS Build Tools（MSVC v143 + Windows SDK）
-      shell: pwsh
-      run: |
-        Write-Host "=== 安装 VS Build Tools（需要 3~5 分钟） ==="
-
-        Invoke-WebRequest `
-          -Uri "https://aka.ms/vs/17/release/vs_BuildTools.exe" `
-          -OutFile "vs_buildtools.exe"
-
-        Start-Process ".\vs_buildtools.exe" `
-          -ArgumentList `
-            "--quiet",
-            "--wait",
-            "--norestart",
-            "--nocache",
-            "--add", "Microsoft.VisualStudio.Workload.VCTools",
-            "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-            "--add", "Microsoft.VisualStudio.Component.VC.CoreBuildTools",
-            "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041",
-            "--add", "Microsoft.VisualStudio.Component.VC.Redist.14.Latest",
-            "--add", "Microsoft.VisualStudio.Component.VC.CMake.Project" `
-          -NoNewWindow -Wait
-
-    - name: 初始化 MSVC 环境
-      uses: ilammy/msvc-dev-cmd@v1
+    - name: 安装 MSVC v143
+      uses: actions/setup-vs@v2
       with:
-        arch: x86
-        toolset: 143
+        vs-version: latest
 
-    - name: 修复所有项目 SDK（强制降级到 10.0.20348.0）
+    - name: 初始化 MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: 修复所有项目 SDK（强制设置为 10.0.20348.0）
       shell: pwsh
       run: |
+        Write-Host "=== 自动修复 Windows SDK 版本 ==="
         $sdk = "10.0.20348.0"
         Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
           $file = $_.FullName
@@ -57,11 +37,12 @@ jobs:
           Write-Host "修复: $file"
         }
 
-    - name: 查找解决方案文件
+    - name: 查找解决方案
       id: sln
       shell: pwsh
       run: |
         $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
+        if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
         echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
 
     - name: 编译 Win32 Debug
@@ -75,7 +56,7 @@ jobs:
           /p:PlatformToolset=v143 `
           /m
 
-    - name: 上传构建产物
+    - name: 上传产物
       uses: actions/upload-artifact@v4
       with:
         name: GameServer-Debug
