@@ -15,52 +15,44 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # ------------------------------
-    # 解除执行策略
-    # ------------------------------
-    - name: 强制解除执行策略
+    # Remove execution policy restrictions
+    - name: Allow PowerShell scripts
       shell: powershell
       run: |
-        powershell -ExecutionPolicy Bypass -Command 'Set-ExecutionPolicy Bypass -Scope Process -Force'
-        powershell -ExecutionPolicy Bypass -Command 'Set-ExecutionPolicy Bypass -Scope CurrentUser -Force'
-        Write-Host 'ExecutionPolicy 已解除'
+        powershell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope Process -Force"
+        powershell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope CurrentUser -Force"
+        Write-Host "ExecutionPolicy OK"
 
-    # ------------------------------
-    # 修复 SDK
-    # ------------------------------
-    - name: 修复所有项目 SDK（10.0.19041.0）
+    # Fix SDK version
+    - name: Fix Windows SDK (10.0.19041.0)
       shell: powershell
       run: |
-        powershell -ExecutionPolicy Bypass -Command '
-          Write-Host "=== 修复 Windows SDK 版本 ==="
-          $sdk = "10.0.19041.0"
+        powershell -ExecutionPolicy Bypass -Command "
+          Write-Host 'Fixing SDK versions...';
+          $sdk = '10.0.19041.0';
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName
+            $file = $_.FullName;
             (Get-Content $file) `
-              -replace "<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>",
+              -replace '<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>',
                        "<WindowsTargetPlatformVersion>$sdk</WindowsTargetPlatformVersion>" `
-              | Set-Content $file
-            Write-Host "修复: $file"
+              | Set-Content $file;
+            Write-Host ('Fixed: ' + $file);
           }
-        '
+        "
 
-    # ------------------------------
-    # 查找 SLN
-    # ------------------------------
-    - name: 查找 SLN
+    # Find solution
+    - name: Find SLN
       id: sln
       shell: powershell
       run: |
-        powershell -ExecutionPolicy Bypass -Command '
-          $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-          if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
-          echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
-        '
+        powershell -ExecutionPolicy Bypass -Command "
+          $sln = Get-ChildItem -Recurse -Filter 'CoreGameServer.sln' | Select-Object -First 1;
+          if (-not $sln) { Write-Error 'CoreGameServer.sln not found'; exit 1 };
+          echo ('file=' + $sln.FullName) >> $env:GITHUB_OUTPUT;
+        "
 
-    # ------------------------------
-    # 编译 Debug Win32
-    # ------------------------------
-    - name: 编译 Win32 Debug
+    # Build
+    - name: Build Debug Win32
       shell: powershell
       run: |
         powershell -ExecutionPolicy Bypass -Command "
@@ -70,13 +62,10 @@ jobs:
             /p:Configuration=Debug `
             /p:Platform=Win32 `
             /p:PlatformToolset=v143 `
-            /m
+            /m;
         "
 
-    # ------------------------------
-    # 上传构建产物
-    # ------------------------------
-    - name: 上传构建产物
+    - name: Upload Build Output
       uses: actions/upload-artifact@v4
       with:
         name: GameServer-Debug
