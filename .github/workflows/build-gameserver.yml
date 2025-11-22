@@ -1,73 +1,52 @@
 name: Build GameServer
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
-    
+    runs-on: windows-2022   # ← 必须改成这个！
+
     steps:
-    - name: 检出代码
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 初始化 VS2022 环境（v143 工具集）
+    - name: 初始化 VS2022 + v143 工具链
       uses: ilammy/msvc-dev-cmd@v1
       with:
-        toolset: v143   # ← 不要写 14.34
+        toolset: 143    # ← 不要带 v
 
-    - name: 调试 - 环境信息
+    - name: 调试环境
       shell: pwsh
       run: |
         Write-Host "VCToolsVersion = $env:VCToolsVersion"
-        Write-Host "VCINSTALLDIR = $env:VCINSTALLDIR"
+        Write-Host "VCINSTALLDIR   = $env:VCINSTALLDIR"
         cl.exe
         msbuild -version
 
-    - name: 找到 CoreGameServer.sln
-      id: find_sln
+    - name: 查找解决方案
+      id: sln
       shell: pwsh
       run: |
         $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-        if (-not $sln) {
-          Write-Error "找不到 CoreGameServer.sln"
-          exit 1
-        }
-        echo "sln=$($sln.FullName)" >> $env:GITHUB_OUTPUT
+        if (-not $sln) { exit 1 }
+        echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
 
-    - name: 编译 GameServer (Debug Win32)
+    - name: 编译 Win32 Debug
       shell: pwsh
       run: |
-        $solutionPath = "${{ steps.find_sln.outputs.sln }}"
-        Write-Host "开始编译: $solutionPath"
-        
         msbuild `
-          "$solutionPath" `
+          "${{ steps.sln.outputs.file }}" `
           /t:Rebuild `
           /p:Configuration=Debug `
           /p:Platform=Win32 `
           /p:PlatformToolset=v143 `
-          /m `
-          /v:minimal
+          /m
 
-    - name: 上传构建产物
+    - name: 上传产物
       uses: actions/upload-artifact@v4
       with:
-        name: GameServer-Debug-Win32
+        name: GameServer-Debug
         path: |
-          **/bin/Debug/
           **/Debug/*.exe
           **/Debug/*.dll
-        retention-days: 7
-
-    - name: 列出构建输出
-      if: always()
-      shell: pwsh
-      run: |
-        Get-ChildItem -Recurse -Include *.exe, *.dll | 
-        Where-Object { $_.FullName -match 'Debug' } |
-        Select-Object FullName, Length
