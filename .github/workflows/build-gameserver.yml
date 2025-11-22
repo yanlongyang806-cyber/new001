@@ -35,68 +35,30 @@ jobs:
         Write-Host "  Lib 路径: $sdkLibPath" -ForegroundColor Gray
         Write-Host ""
         
-        $sdkVersion = $null
-        
-        # 方法1：从 Include 目录检测
-        if (Test-Path $sdkIncludePath) {
-          Write-Host "正在扫描 Include 目录..." -ForegroundColor Yellow
-          $sdkVersions = Get-ChildItem -Path $sdkIncludePath -Directory -ErrorAction SilentlyContinue | 
-            Where-Object { $_.Name -match '^10\.\d+\.\d+' } |
-            Sort-Object { [version]$_.Name } -Descending
-          
-          if ($sdkVersions) {
-            $sdkVersion = $sdkVersions[0].Name
-            Write-Host "✓ 从 Include 目录找到 SDK 版本: $sdkVersion" -ForegroundColor Green
-          }
-        }
-        
-        # 方法2：从 Lib 目录检测（备用）
-        if (-not $sdkVersion -and (Test-Path $sdkLibPath)) {
-          Write-Host "正在扫描 Lib 目录..." -ForegroundColor Yellow
-          $sdkVersions = Get-ChildItem -Path $sdkLibPath -Directory -ErrorAction SilentlyContinue | 
-            Where-Object { $_.Name -match '^10\.\d+\.\d+' } |
-            Sort-Object { [version]$_.Name } -Descending
-          
-          if ($sdkVersions) {
-            $sdkVersion = $sdkVersions[0].Name
-            Write-Host "✓ 从 Lib 目录找到 SDK 版本: $sdkVersion" -ForegroundColor Green
-          }
-        }
-        
-        # 方法3：使用 vswhere 查询（如果可用）
-        if (-not $sdkVersion) {
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (Test-Path $vswhere) {
-            Write-Host "正在使用 vswhere 查询..." -ForegroundColor Yellow
-            $vsPath = & $vswhere -latest -property installationPath
-            if ($vsPath) {
-              $sdkManifest = Join-Path $vsPath "VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt"
-              if (Test-Path $sdkManifest) {
-                # 尝试从 Visual Studio 安装中获取信息
-                Write-Host "  找到 Visual Studio 安装: $vsPath" -ForegroundColor Gray
-              }
-            }
-          }
-        }
-        
-        # 如果仍然没有找到，使用默认值
-        if (-not $sdkVersion) {
-          Write-Host "⚠ 未找到具体的 SDK 版本，将使用 '10.0'（让 MSBuild 自动选择）" -ForegroundColor Yellow
-          $sdkVersion = "10.0"
-        } else {
-          Write-Host ""
-          Write-Host "找到的所有 SDK 版本:" -ForegroundColor Cyan
-          if (Test-Path $sdkIncludePath) {
-            $allVersions = Get-ChildItem -Path $sdkIncludePath -Directory -ErrorAction SilentlyContinue | 
-              Where-Object { $_.Name -match '^10\.\d+\.\d+' } |
-              Sort-Object { [version]$_.Name } -Descending |
-              Select-Object -ExpandProperty Name
-            $allVersions | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
-          }
-        }
-        
+        # 简化方案：直接使用 10.0 让 MSBuild 自动选择已安装的最新版本
+        # 这样可以避免版本不匹配的问题，MSBuild 会自动选择兼容的版本
+        Write-Host "使用简化方案：直接使用 '10.0' 让 MSBuild 自动选择已安装的最新版本" -ForegroundColor Yellow
+        Write-Host "这样可以避免版本不匹配的问题" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "将使用 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
+        
+        # 列出所有可用的 SDK 版本（仅用于信息显示）
+        if (Test-Path $sdkIncludePath) {
+          Write-Host "扫描到的所有 SDK 版本（仅供参考）:" -ForegroundColor Cyan
+          $allVersions = Get-ChildItem -Path $sdkIncludePath -Directory -ErrorAction SilentlyContinue | 
+            Where-Object { $_.Name -match '^10\.\d+\.\d+' } |
+            Sort-Object { [version]$_.Name } -Descending |
+            Select-Object -ExpandProperty Name
+          if ($allVersions) {
+            $allVersions | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+          } else {
+            Write-Host "  未找到任何版本" -ForegroundColor Gray
+          }
+          Write-Host ""
+        }
+        
+        # 直接使用 10.0，让 MSBuild 自动选择
+        $sdkVersion = "10.0"
+        Write-Host "将使用 Windows SDK 版本: $sdkVersion（MSBuild 将自动选择已安装的最新兼容版本）" -ForegroundColor Green
         Write-Host ""
         
         # 将版本存储到多个环境变量，确保 MSBuild 能够识别
@@ -316,7 +278,7 @@ jobs:
         Write-Host "WindowsSDKVersion: $sdkVersionEnv" -ForegroundColor $(if ($sdkVersionEnv) { "Green" } else { "Yellow" })
         Write-Host ""
         
-        # 确定要使用的 SDK 版本
+        # 确定要使用的 SDK 版本（优先使用环境变量，否则使用 10.0）
         if (-not $sdkVersion) {
           if ($targetPlatformVersion) {
             $sdkVersion = $targetPlatformVersion
@@ -332,6 +294,9 @@ jobs:
         
         Write-Host ""
         Write-Host "最终使用的 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
+        if ($sdkVersion -eq "10.0") {
+          Write-Host "  （MSBuild 将自动选择已安装的最新兼容版本）" -ForegroundColor Gray
+        }
         Write-Host ""
         
         # 确保环境变量在当前步骤中可用（如果之前步骤设置的变量未传递）
