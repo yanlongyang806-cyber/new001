@@ -232,22 +232,36 @@ jobs:
           }
         }
         
-        Write-Host ""
+        Write-Host "" 
         Write-Host "=== 开始编译 ===" -ForegroundColor Green
         Write-Host "解决方案文件: $solutionPath" -ForegroundColor Green
         Write-Host ""
+        Write-Host "⚠ 重要：强制使用 VS2022 工具集 (v143)" -ForegroundColor Yellow
+        Write-Host "   原因：GitHub Actions 只提供 Visual Studio 2022" -ForegroundColor Yellow
+        Write-Host "   这将覆盖项目文件中的旧工具集设置" -ForegroundColor Yellow
+        Write-Host ""
         
         # Build with error handling
+        # 强制使用 VS2022 工具集（v143），因为 GitHub Actions 只有 VS2022
+        # 使用 /p 参数可以覆盖项目文件中的设置
         $buildArgs = @(
           $solutionPath,
           "/p:Configuration=Debug",
           "/p:Platform=Win32",
+          "/p:PlatformToolset=v143",
+          "/p:PlatformToolsetVersion=143",
+          "/p:WindowsTargetPlatformVersion=10.0",
+          "/p:VCToolsVersion=14.34",
           "/m",
           "/v:minimal",
           "/nologo",
           "/fl",
           "/flp:logfile=build.log;verbosity=detailed"
         )
+        
+        Write-Host "编译参数:" -ForegroundColor Cyan
+        $buildArgs | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+        Write-Host ""
         
         & $msbuild $buildArgs
         
@@ -326,6 +340,8 @@ jobs:
           $solutionPath `
           /p:Configuration="Full Debug" `
           /p:Platform=Win32 `
+          /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=10.0 `
           /m `
           /v:minimal `
           /nologo
