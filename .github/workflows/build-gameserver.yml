@@ -1,4 +1,4 @@
-name: Build GameServer (Win32 Debug + Release)
+name: Build GameServer (Win32 Debug)
 
 on:
   push:
@@ -31,7 +31,7 @@ jobs:
           # 删除 PreBuildEvent
           $xml = $xml -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>', ''
 
-          # 注入禁用 CodeAnalysis 的配置（必须用连续 here-string）
+          # 注入禁用 CodeAnalysis 的配置（here-string 必须连续）
           if ($xml -notmatch 'DisableCodeAnalysis') {
             $insert = @"
   <DisableCodeAnalysis>true</DisableCodeAnalysis>
