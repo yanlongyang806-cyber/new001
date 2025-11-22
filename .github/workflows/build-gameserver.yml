@@ -1,11 +1,9 @@
 name: Build GameServer
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
 
 jobs:
   build:
@@ -15,67 +13,57 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # 自动寻找 VS2022 工具链路径
-    - name: Detect Visual Studio Paths
-      id: vs
-      shell: powershell
-      run: |
-        $vsPaths = @(
-          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise",
-          "C:\Program Files\Microsoft Visual Studio\2022\Professional",
-          "C:\Program Files\Microsoft Visual Studio\2022\Community"
-        )
-
-        foreach ($p in $vsPaths) {
-          if (Test-Path "$p\VC\Auxiliary\Build\vcvarsall.bat") {
-            Write-Host "Found VS at $p"
-            echo "vcvars=$p\VC\Auxiliary\Build\vcvarsall.bat" >> $env:GITHUB_OUTPUT
-            echo "msbuild=$p\MSBuild\Current\Bin\MSBuild.exe" >> $env:GITHUB_OUTPUT
-            exit 0
-          }
-        }
-
-        Write-Error "FATAL: 未找到 Visual Studio 2022 的安装路径！"
-
     # 修复 Windows SDK
     - name: Fix Windows SDK
       shell: powershell
       run: |
         $sdk = "10.0.19041.0"
-        Write-Host "Fixing SDK version to $sdk"
+        Write-Host "Fixing SDK to $sdk"
+
         Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName
-            $content = Get-Content $file -Raw
-            $xml = [xml]$content
-            $updated = $false
-            foreach ($pg in $xml.Project.PropertyGroup) {
-                foreach ($node in $pg.ChildNodes) {
-                    if ($node.Name -eq "WindowsTargetPlatformVersion") {
-                        $node.InnerText = $sdk
-                        $updated = $true
-                    }
-                }
+          $file = $_.FullName
+          $xml = [xml](Get-Content $file -Raw)
+
+          $updated = $false
+          foreach ($pg in $xml.Project.PropertyGroup) {
+            foreach ($node in $pg.ChildNodes) {
+              if ($node.Name -eq "WindowsTargetPlatformVersion") {
+                $node.InnerText = $sdk
+                $updated = $true
+              }
             }
-            if ($updated) { $xml.Save($file) }
+          }
+
+          if ($updated) {
+            $xml.Save($file)
+            Write-Host "Updated SDK in $file"
+          } else {
+            Write-Host "No SDK tag in $file"
+          }
         }
 
-    - name: Locate Solution
+    - name: Find SLN
       id: sln
       shell: powershell
       run: |
         $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-        if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
+        if (-not $sln) { Write-Error "SLN not found"; exit 1 }
         echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
+        Write-Host "Found SLN: $($sln.FullName)"
 
-    # 真实自动可执行的构建步骤
+    # 用你的 VS2022 加载 MSVC 编译环境
+    - name: Load VS Environment
+      shell: cmd
+      run: |
+        echo ==== Loading vcvarsall ====
+        call "I:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x86
+
+    # 编译
     - name: Build Debug Win32
       shell: cmd
       run: |
-        echo ==== Load MSVC Environment ====
-        call "${{ steps.vs.outputs.vcvars }}" x86
-
-        echo ==== MSBuild Start ====
-        "${{ steps.vs.outputs.msbuild }}" ^
+        echo ==== Starting MSBuild ====
+        "I:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" ^
           "${{ steps.sln.outputs.file }}" ^
           /t:Rebuild ^
           /p:Configuration=Debug ^
