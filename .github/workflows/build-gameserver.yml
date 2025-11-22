@@ -12,46 +12,39 @@ jobs:
     runs-on: windows-latest
     
     steps:
-    - name: Checkout code
+    - name: 检出代码
       uses: actions/checkout@v4
       
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
+    - name: 安装 MSVC 14.34 工具集
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        toolset: "14.34"  # Visual Studio 2022 工具集
+        arch: x86  # 32位架构（Win32）
       
-    - name: Find MSBuild
-      id: find-msbuild
+    - name: 验证 MSBuild 环境
       shell: pwsh
       run: |
-        # Try to find MSBuild using vswhere
-        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-        if (Test-Path $vswhere) {
-          $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-          if ($msbuild -and (Test-Path $msbuild)) {
-            Write-Host "Found MSBuild via vswhere: $msbuild"
-            echo "MSBUILD_PATH=$msbuild" >> $env:GITHUB_ENV
-            exit 0
-          }
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "验证 MSBuild 环境" -ForegroundColor Cyan
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host ""
+        
+        # 检查 MSBuild 是否可用
+        $msbuildVersion = msbuild -version 2>&1
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host "✓ MSBuild 可用" -ForegroundColor Green
+          Write-Host "版本信息:" -ForegroundColor Yellow
+          $msbuildVersion | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+        } else {
+          Write-Host "✗ MSBuild 不可用" -ForegroundColor Red
+          exit 1
         }
         
-        # Fallback: try common paths
-        $paths = @(
-          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
-          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
-          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
-          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
-          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe"
-        )
-        
-        foreach ($path in $paths) {
-          if (Test-Path $path) {
-            Write-Host "Found MSBuild: $path"
-            echo "MSBUILD_PATH=$path" >> $env:GITHUB_ENV
-            exit 0
-          }
-        }
-        
-        Write-Host "MSBuild not found, will use msbuild from PATH"
-        echo "MSBUILD_PATH=msbuild" >> $env:GITHUB_ENV
+        Write-Host ""
+        Write-Host "检查环境变量..." -ForegroundColor Yellow
+        Write-Host "  VCINSTALLDIR: $env:VCINSTALLDIR" -ForegroundColor Gray
+        Write-Host "  VCToolsVersion: $env:VCToolsVersion" -ForegroundColor Gray
+        Write-Host ""
         
     - name: 调试 - 显示目录结构
       shell: pwsh
@@ -126,22 +119,12 @@ jobs:
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host ""
         
-        # 查找 MSBuild
-        $msbuild = $env:MSBUILD_PATH
-        if (-not $msbuild -or $msbuild -eq "msbuild") {
-          Write-Host "正在查找 MSBuild..." -ForegroundColor Yellow
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (Test-Path $vswhere) {
-            $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-          }
-          
-          if (-not $msbuild -or -not (Test-Path $msbuild)) {
-            $msbuild = "msbuild"
-          }
-        }
+        # 使用 msbuild（已在 PATH 中，由 ilammy/msvc-dev-cmd 设置）
+        $msbuild = "msbuild"
         
         Write-Host "使用 MSBuild: $msbuild" -ForegroundColor Green
         Write-Host "工作目录: $(Get-Location)" -ForegroundColor Green
+        Write-Host "工具集版本: $env:VCToolsVersion" -ForegroundColor Green
         Write-Host ""
         
         # 查找解决方案文件
@@ -242,16 +225,14 @@ jobs:
         Write-Host ""
         
         # Build with error handling
-        # 强制使用 VS2022 工具集（v143），因为 GitHub Actions 只有 VS2022
-        # 使用 /p 参数可以覆盖项目文件中的设置
+        # 使用 ilammy/msvc-dev-cmd 已设置的环境，工具集会自动使用正确的版本
+        # 仍然显式指定以确保兼容性
         $buildArgs = @(
           $solutionPath,
           "/p:Configuration=Debug",
           "/p:Platform=Win32",
           "/p:PlatformToolset=v143",
-          "/p:PlatformToolsetVersion=143",
           "/p:WindowsTargetPlatformVersion=10.0",
-          "/p:VCToolsVersion=14.34",
           "/m",
           "/v:minimal",
           "/nologo",
@@ -294,16 +275,8 @@ jobs:
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host ""
         
-        $msbuild = $env:MSBUILD_PATH
-        if (-not $msbuild -or $msbuild -eq "msbuild") {
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (Test-Path $vswhere) {
-            $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-          }
-          if (-not $msbuild -or -not (Test-Path $msbuild)) {
-            $msbuild = "msbuild"
-          }
-        }
+        # 使用 msbuild（已在 PATH 中，由 ilammy/msvc-dev-cmd 设置）
+        $msbuild = "msbuild"
         
         Write-Host "正在查找解决方案文件..." -ForegroundColor Yellow
         
@@ -341,7 +314,6 @@ jobs:
           /p:Configuration="Full Debug" `
           /p:Platform=Win32 `
           /p:PlatformToolset=v143 `
-          /p:WindowsTargetPlatformVersion=10.0 `
           /m `
           /v:minimal `
           /nologo
