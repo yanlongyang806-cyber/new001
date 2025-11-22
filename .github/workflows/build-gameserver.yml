@@ -9,46 +9,62 @@ on:
 
 jobs:
   build:
-    runs-on: self-hosted  # 使用本地 Windows 机器上的 GitHub Runner
+    runs-on: self-hosted   # ★ 使用你自己的 Windows Runner
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 修复所有项目 SDK（强制设置为 10.0.19041.0）
+    - name: 显示 MSBuild 与 CL 环境
       shell: pwsh
       run: |
-        Write-Host "=== 自动修复 Windows SDK 版本 ==="
+        Write-Host "=== 环境检查 ==="
+        Get-Command msbuild -ErrorAction SilentlyContinue
+        Get-Command cl.exe -ErrorAction SilentlyContinue
+
+    - name: 修复所有 vcxproj（强制统一 Windows SDK = 10.0.19041.0）
+      shell: pwsh
+      run: |
+        Write-Host "=== 正在修复 SDK 版本为 10.0.19041.0 ==="
         $sdk = "10.0.19041.0"
-        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-          $file = $_.FullName
-          (Get-Content $file) `
+        $files = Get-ChildItem -Recurse -Filter *.vcxproj
+        foreach ($f in $files) {
+          (Get-Content $f.FullName) `
             -replace "<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>",
                      "<WindowsTargetPlatformVersion>$sdk</WindowsTargetPlatformVersion>" `
-            | Set-Content $file
-          Write-Host "修复: $file"
+            | Set-Content $f.FullName
+          Write-Host "修复完成：$($f.FullName)"
         }
 
-    - name: 查找 sln
+    - name: 查找解决方案 CoreGameServer.sln
       id: sln
       shell: pwsh
       run: |
         $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-        if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
+        if (-not $sln) {
+          Write-Error "❌ 未找到 CoreGameServer.sln"
+          exit 1
+        }
+        Write-Host "找到 sln: $($sln.FullName)"
         echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
 
-    - name: 编译 Win32 Debug
+    - name: 编译 GameServer （Win32 Debug）
       shell: pwsh
       run: |
+        Write-Host "=== 开始编译 Debug Win32 ==="
         msbuild `
           "${{ steps.sln.outputs.file }}" `
           /t:Rebuild `
           /p:Configuration=Debug `
           /p:Platform=Win32 `
-          /p:PlatformToolset=v143 `
-          /m
+          /m `
+          /v:minimal
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "❌ 编译失败！"
+          exit 1
+        }
 
-    - name: 上传产物
+    - name: 上传构建结果
       uses: actions/upload-artifact@v4
       with:
         name: GameServer-Debug
