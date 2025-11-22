@@ -1,9 +1,11 @@
 name: Build GameServer
 
 on:
-  workflow_dispatch:
   push:
     branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -13,33 +15,46 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # 修复 Windows SDK
+    # 1) 复制 StructParser.exe 到工作目录（关键步骤！）
+    - name: Copy StructParser.exe
+      shell: powershell
+      run: |
+        Write-Host "Copying StructParser.exe ..."
+        Copy-Item "I:\wd112\package\Utilities\Bin\StructParser.exe" -Destination "${{ runner.temp }}\StructParser.exe"
+        Write-Host "Copied to $env:RUNNER_TEMP"
+
+    # 2) 修复所有 vcxproj 的 PreBuildEvent，改成正确路径
+    - name: Patch PreBuildEvent
+      shell: powershell
+      run: |
+        Write-Host "=== 修复 PreBuildEvent 中的 StructParser 路径 ==="
+        $parser = "${{ runner.temp }}\StructParser.exe".Replace("\","\\")
+        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+            $file = $_.FullName
+            (Get-Content $file) `
+              -replace "\.\.\\\.\.\\utilities\\bin\\structparser", $parser `
+              | Set-Content $file
+            Write-Host "Patched: $file"
+        }
+
+    # 3) 修复所有项目 Windows SDK 至 10.0.19041.0
     - name: Fix Windows SDK
       shell: powershell
       run: |
         $sdk = "10.0.19041.0"
-        Write-Host "Fixing SDK to $sdk"
-
         Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-          $file = $_.FullName
-          $xml = [xml](Get-Content $file -Raw)
-
-          $updated = $false
-          foreach ($pg in $xml.Project.PropertyGroup) {
-            foreach ($node in $pg.ChildNodes) {
-              if ($node.Name -eq "WindowsTargetPlatformVersion") {
-                $node.InnerText = $sdk
-                $updated = $true
-              }
+            $file = $_.FullName
+            $content = Get-Content $file -Raw
+            $xml = [xml]$content
+            foreach ($pg in $xml.Project.PropertyGroup) {
+                foreach ($n in $pg.ChildNodes) {
+                    if ($n.Name -eq "WindowsTargetPlatformVersion") {
+                        $n.InnerText = $sdk
+                    }
+                }
             }
-          }
-
-          if ($updated) {
             $xml.Save($file)
             Write-Host "Updated SDK in $file"
-          } else {
-            Write-Host "No SDK tag in $file"
-          }
         }
 
     - name: Find SLN
@@ -47,22 +62,13 @@ jobs:
       shell: powershell
       run: |
         $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-        if (-not $sln) { Write-Error "SLN not found"; exit 1 }
         echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
-        Write-Host "Found SLN: $($sln.FullName)"
 
-    # 用你的 VS2022 加载 MSVC 编译环境
-    - name: Load VS Environment
-      shell: cmd
-      run: |
-        echo ==== Loading vcvarsall ====
-        call "I:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x86
-
-    # 编译
+    # 4) 编译
     - name: Build Debug Win32
       shell: cmd
       run: |
-        echo ==== Starting MSBuild ====
+        call "I:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x86
         "I:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" ^
           "${{ steps.sln.outputs.file }}" ^
           /t:Rebuild ^
@@ -71,7 +77,7 @@ jobs:
           /p:PlatformToolset=v143 ^
           /m
 
-    - name: Upload Artifacts
+    - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: GameServer-Debug
