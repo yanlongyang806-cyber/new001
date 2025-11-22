@@ -121,8 +121,10 @@ jobs:
             $content = Get-Content $file -Raw -Encoding UTF8
             
             # 重命名 log2 函数以避免与 Windows SDK 冲突
+            # 先修复函数定义
             $content = $content -replace '__forceinline static int log2\(int val\)', '__forceinline static int log2_int(int val)'
-            $content = $content -replace '\b__BIT\(log2\(', '__BIT(log2_int('
+            # 再修复函数调用（在 pow2 函数中）
+            $content = $content -replace 'return __BIT\(log2\(val\)\);', 'return __BIT(log2_int(val));'
             
             Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
             Write-Host "Fixed log2 conflict in $file"
