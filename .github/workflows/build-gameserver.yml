@@ -16,14 +16,14 @@ jobs:
       uses: actions/checkout@v4
 
     # ------------------------------
-    # 解除执行策略（适配 NETWORK SERVICE）
+    # 解除执行策略
     # ------------------------------
     - name: 强制解除执行策略
       shell: powershell
       run: |
-        powershell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope Process -Force"
-        powershell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope CurrentUser -Force"
-        Write-Host "ExecutionPolicy 已解除"
+        powershell -ExecutionPolicy Bypass -Command 'Set-ExecutionPolicy Bypass -Scope Process -Force'
+        powershell -ExecutionPolicy Bypass -Command 'Set-ExecutionPolicy Bypass -Scope CurrentUser -Force'
+        Write-Host 'ExecutionPolicy 已解除'
 
     # ------------------------------
     # 修复 SDK
@@ -31,31 +31,31 @@ jobs:
     - name: 修复所有项目 SDK（10.0.19041.0）
       shell: powershell
       run: |
-        powershell -ExecutionPolicy Bypass -Command "
-          Write-Host '=== 修复 Windows SDK 版本 ==='
-          \$sdk = '10.0.19041.0'
+        powershell -ExecutionPolicy Bypass -Command '
+          Write-Host "=== 修复 Windows SDK 版本 ==="
+          $sdk = "10.0.19041.0"
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            \$file = \$_.FullName
-            (Get-Content \$file) `
-              -replace '<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>',
-                       \"<WindowsTargetPlatformVersion>\$sdk</WindowsTargetPlatformVersion>\" `
-              | Set-Content \$file
-            Write-Host '修复: ' \$file
+            $file = $_.FullName
+            (Get-Content $file) `
+              -replace "<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>",
+                       "<WindowsTargetPlatformVersion>$sdk</WindowsTargetPlatformVersion>" `
+              | Set-Content $file
+            Write-Host "修复: $file"
           }
-        "
+        '
 
     # ------------------------------
-    # 查找 sln
+    # 查找 SLN
     # ------------------------------
     - name: 查找 SLN
       id: sln
       shell: powershell
       run: |
-        powershell -ExecutionPolicy Bypass -Command "
-          \$sln = Get-ChildItem -Recurse -Filter 'CoreGameServer.sln' | Select-Object -First 1
-          if (-not \$sln) { Write-Error '未找到 CoreGameServer.sln'; exit 1 }
-          echo \"file=\$([string]\$sln.FullName)\" >> \$env:GITHUB_OUTPUT
-        "
+        powershell -ExecutionPolicy Bypass -Command '
+          $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
+          if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
+          echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
+        '
 
     # ------------------------------
     # 编译 Debug Win32
