@@ -57,18 +57,21 @@ jobs:
               # 尝试在 CharacterSet 之后添加
               $pattern1 = '(<PropertyGroup[^>]*Condition="[^"]*Debug\|Win32"[^>]*>[\s\S]*?<CharacterSet>[^<]+</CharacterSet>)'
               if ($content -match $pattern1) {
-                $content = $content -replace $pattern1, '$1' + "`n    <RunCodeAnalysis>false</RunCodeAnalysis>"
+                $replacement1 = '$1' + "`n    <RunCodeAnalysis>false</RunCodeAnalysis>"
+                $content = $content -replace $pattern1, $replacement1
                 $caDisabled = $true
               } else {
                 # 尝试在 ConfigurationType 之后添加
                 $pattern2 = '(<PropertyGroup[^>]*Condition="[^"]*Debug\|Win32"[^>]*>[\s\S]*?<ConfigurationType>[^<]+</ConfigurationType>)'
                 if ($content -match $pattern2) {
-                  $content = $content -replace $pattern2, '$1' + "`n    <RunCodeAnalysis>false</RunCodeAnalysis>"
+                  $replacement2 = '$1' + "`n    <RunCodeAnalysis>false</RunCodeAnalysis>"
+                  $content = $content -replace $pattern2, $replacement2
                   $caDisabled = $true
                 } else {
                   # 最后尝试：在 PropertyGroup 开始标签后添加
                   $pattern3 = '(<PropertyGroup[^>]*Condition="[^"]*Debug\|Win32"[^>]*>)'
-                  $content = $content -replace $pattern3, '$1' + "`n    <RunCodeAnalysis>false</RunCodeAnalysis>"
+                  $replacement3 = '$1' + "`n    <RunCodeAnalysis>false</RunCodeAnalysis>"
+                  $content = $content -replace $pattern3, $replacement3
                   $caDisabled = $true
                 }
               }
