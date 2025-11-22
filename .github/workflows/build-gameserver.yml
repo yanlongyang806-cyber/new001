@@ -13,31 +13,72 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fix Windows SDK
+      - name: Fix Windows SDK and XML Structure
         shell: powershell
         run: |
           $sdk = "10.0.19041.0"
-          Write-Host "Fixing SDK version to $sdk"
+          Write-Host "Fixing SDK version to $sdk and XML structure"
+          
+          $fixedCount = 0
+          $sdkUpdatedCount = 0
 
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
             $file = $_.FullName
-            $xml = [xml](Get-Content $file -Raw)
-
-            $updated = $false
-            foreach ($pg in $xml.Project.PropertyGroup) {
-              foreach ($n in $pg.ChildNodes) {
-                if ($n.Name -eq "WindowsTargetPlatformVersion") {
-                  $n.InnerText = $sdk
-                  $updated = $true
+            $content = Get-Content $file -Raw -Encoding UTF8
+            
+            $originalContent = $content
+            
+            # 使用多行正则表达式修复 PreBuildEvent 位置（在 </ImportGroup> 和 </Project> 之间）
+            $content = $content -replace '(?s)(</ImportGroup>\s*)<PreBuildEvent>.*?</PreBuildEvent>(\s*</Project>)', '$1$2'
+            
+            # 移除所有在 Project 根元素下的 PreBuildEvent（作为后备清理）
+            $content = $content -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>(\s*</Project>)', '$1'
+            
+            # 修复错误的 PreBuildEvent 在 ProjectReference 中的位置
+            $content = $content -replace '(?s)(<Project>\{[^}]+\})<PreBuildEvent>.*?</PreBuildEvent>', '$1'
+            
+            # 如果内容被修改，标记为已修复
+            if ($content -ne $originalContent) {
+              $fixedCount++
+              Write-Host "Fixed XML structure: $file"
+            }
+            
+            # 现在用修复后的内容加载 XML
+            try {
+              $xml = [xml]$content
+              
+              $updated = $false
+              foreach ($pg in $xml.Project.PropertyGroup) {
+                foreach ($n in $pg.ChildNodes) {
+                  if ($n.Name -eq "WindowsTargetPlatformVersion") {
+                    $n.InnerText = $sdk
+                    $updated = $true
+                  }
                 }
               }
-            }
 
-            if ($updated) {
-              $xml.Save($file)
-              Write-Host "Updated: $file"
+              if ($updated) {
+                $xml.Save($file)
+                $sdkUpdatedCount++
+                Write-Host "Updated SDK: $file"
+              } else {
+                # 即使没有更新 SDK，也要保存修复后的内容
+                Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
+                if ($fixedCount -gt 0) {
+                  Write-Host "Saved fixed XML: $file"
+                }
+              }
+            } catch {
+              # XML 解析失败，使用文本替换作为后备方案
+              Write-Host "Warning: Could not parse $file as XML, using text replacement"
+              Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
+              Write-Host "Saved with text replacement: $file"
             }
           }
+          
+          Write-Host "=== Summary ==="
+          Write-Host "Files with XML structure fixed: $fixedCount"
+          Write-Host "Files with SDK updated: $sdkUpdatedCount"
 
       - name: Copy StructParser Tools (DEBUG MODE)
         shell: powershell
