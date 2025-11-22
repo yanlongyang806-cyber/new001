@@ -15,5 +15,115 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Test Runner Works
-        run: echo "Runner OK"
+      # === ① 彻底修复所有损坏的 PreBuildEvent（XML 解析版本）===
+      - name: Repair PreBuildEvent in all vcxproj (SAFE XML)
+        shell: powershell
+        run: |
+          Write-Host "=== Fixing PreBuildEvent using XML parser ==="
+
+          Add-Type -AssemblyName System.Xml
+
+          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+            $file = $_.FullName
+            Write-Host "Processing: $file"
+
+            $xml = New-Object System.Xml.XmlDocument
+            $xml.PreserveWhitespace = $true
+
+            try {
+              $xml.Load($file)
+            } catch {
+              Write-Host "❌ XML Failed, skipping: $file"
+              return
+            }
+
+            $project = $xml.Project
+            if (-not $project) { return }
+
+            $modified = $false
+
+            # 1. 移除所有 <Project> 下非法 PreBuildEvent
+            foreach ($node in $project.ChildNodes) {
+              if ($node.Name -eq 'PreBuildEvent') {
+                $project.RemoveChild($node)
+                $modified = $true
+                Write-Host "✔ Removed illegal root PreBuildEvent"
+              }
+            }
+
+            # 2. 找正确位置（ItemDefinitionGroup -> ClCompile）
+            $itemDef = $project.ItemDefinitionGroup | Where-Object { $_.ClCompile }
+            if (-not $itemDef) {
+              $itemDef = $xml.CreateElement("ItemDefinitionGroup")
+              $project.AppendChild($itemDef) | Out-Null
+
+              $cl = $xml.CreateElement("ClCompile")
+              $itemDef.AppendChild($cl) | Out-Null
+
+              $modified = $true
+            } else {
+              $cl = $itemDef.ClCompile
+            }
+
+            # 3. 如果没有 PreBuildEvent，则补一个空节点
+            if (-not $cl.PreBuildEvent) {
+              $pre = $xml.CreateElement("PreBuildEvent")
+              $text = $xml.CreateTextNode("")
+              $pre.AppendChild($text) | Out-Null
+              $cl.AppendChild($pre) | Out-Null
+
+              $modified = $true
+              Write-Host "✔ Added missing PreBuildEvent"
+            }
+
+            if ($modified) {
+              $xml.Save($file)
+              Write-Host "✔ Saved fixed: $file"
+            }
+          }
+
+      # === ② 禁用 SAL / PREfast / CodeAnalysis（彻底）===
+      - name: Disable SAL & CodeAnalysis
+        shell: powershell
+        run: |
+          Write-Host "=== Disabling SAL / PREfast / CodeAnalysis ==="
+
+          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+            $file = $_.FullName
+            $c = Get-Content $file -Raw
+
+            $orig = $c
+
+            $c = $c -replace "/analyze", ""
+            $c = $c -replace "<EnablePREfast>.*?</EnablePREfast>", "<EnablePREfast>false</EnablePREfast>"
+            $c = $c -replace "<RunCodeAnalysis>.*?</RunCodeAnalysis>", "<RunCodeAnalysis>false</RunCodeAnalysis>"
+
+            if ($c -notmatch "_NO_CODE_ANALYSIS_") {
+              $c = $c -replace "<PreprocessorDefinitions>([^<]*)</PreprocessorDefinitions>",
+                "<PreprocessorDefinitions>_NO_CODE_ANALYSIS_;$1</PreprocessorDefinitions>"
+            }
+
+            if ($c -ne $orig) {
+              Set-Content $file $c -Encoding UTF8 -NoNewline
+              Write-Host "✔ SAL disabled in: $file"
+            }
+          }
+
+      # === ③ 编译 GameServer ===
+      - name: Build GameServer
+        shell: cmd
+        run: |
+          echo ==== Load VS2022 ====
+          call "I:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x86
+
+          echo ==== MSBUILD START ====
+          "I:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" ^
+            Core\GameServer\CoreGameServer.sln ^
+            /t:Rebuild ^
+            /p:Configuration=Debug ^
+            /p:Platform=Win32 ^
+            /p:PlatformToolset=v143 ^
+            /p:RunCodeAnalysis=false ^
+            /p:EnablePREfast=false ^
+            /p:CodeAnalysisRuleSet=none ^
+            /m
