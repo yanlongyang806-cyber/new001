@@ -19,7 +19,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: 修复所有项目 SDK（强制设置为 10.0.19041.0）
-      shell: pwsh
+      shell: powershell
       run: |
         Write-Host "=== 自动修复 Windows SDK 版本 ==="
         $sdk = "10.0.19041.0"
@@ -34,14 +34,14 @@ jobs:
 
     - name: 查找 sln
       id: sln
-      shell: pwsh
+      shell: powershell
       run: |
         $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
         if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
         echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
 
     - name: 编译 Win32 Debug
-      shell: pwsh
+      shell: powershell
       run: |
         msbuild `
           "${{ steps.sln.outputs.file }}" `
