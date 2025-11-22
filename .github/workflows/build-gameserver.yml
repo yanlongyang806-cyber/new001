@@ -46,12 +46,35 @@ jobs:
               Write-Host "Fixed XML structure: $file"
             }
             
-            # 现在用修复后的内容加载 XML
+            # 禁用代码分析（使用文本替换避免 xmlns 属性问题）
+            $caDisabled = $false
+            if ($content -notmatch '<RunCodeAnalysis>') {
+              # 在第一个 PropertyGroup 中添加（在 ConfigurationType 之后）
+              $content = $content -replace '(<PropertyGroup[^>]*Condition="[^"]*Debug\|Win32"[^>]*>[\s\S]*?<ConfigurationType>[^<]+</ConfigurationType>)', '$1`n    <RunCodeAnalysis>false</RunCodeAnalysis>'
+              if ($content -match 'RunCodeAnalysis') {
+                $caDisabled = $true
+              } else {
+                # 如果上面的替换失败，尝试在 PropertyGroup 标签后添加
+                $content = $content -replace '(<PropertyGroup[^>]*Condition="[^"]*Debug\|Win32"[^>]*>)', '$1`n    <RunCodeAnalysis>false</RunCodeAnalysis>'
+                $caDisabled = $true
+              }
+            } else {
+              # 更新现有值
+              $content = $content -replace '(<RunCodeAnalysis>)[^<]*(</RunCodeAnalysis>)', '$1false$2'
+              $caDisabled = $true
+            }
+            
+            # 禁用 EnablePREfast（使用文本替换）
+            if ($content -match '<EnablePREfast>') {
+              $content = $content -replace '(<EnablePREfast>)[^<]*(</EnablePREfast>)', '$1false$2'
+              $caDisabled = $true
+            }
+            
+            # 现在用修复后的内容加载 XML 来更新 SDK 版本
             try {
               $xml = [xml]$content
               
               $updated = $false
-              $caDisabled = $false
               
               # 修复 Windows SDK 版本
               foreach ($pg in $xml.Project.PropertyGroup) {
@@ -59,29 +82,6 @@ jobs:
                   if ($n.Name -eq "WindowsTargetPlatformVersion") {
                     $n.InnerText = $sdk
                     $updated = $true
-                  }
-                }
-              }
-              
-              # 禁用代码分析（修复 sourceannotations.h 语法错误）
-              foreach ($pg in $xml.Project.PropertyGroup) {
-                $runCA = $pg.SelectSingleNode("RunCodeAnalysis")
-                if ($null -eq $runCA) {
-                  $runCA = $xml.CreateElement("RunCodeAnalysis")
-                  $pg.AppendChild($runCA) | Out-Null
-                }
-                $runCA.InnerText = "false"
-                $caDisabled = $true
-              }
-              
-              # 在 ItemDefinitionGroup 中禁用 EnablePREfast
-              foreach ($idg in $xml.Project.ItemDefinitionGroup) {
-                $clCompile = $idg.SelectSingleNode("ClCompile")
-                if ($null -ne $clCompile) {
-                  $enablePREfast = $clCompile.SelectSingleNode("EnablePREfast")
-                  if ($null -ne $enablePREfast) {
-                    $enablePREfast.InnerText = "false"
-                    $caDisabled = $true
                   }
                 }
               }
@@ -94,14 +94,10 @@ jobs:
               }
             } catch {
               # XML 解析失败，使用文本替换作为后备方案
-              Write-Host "Warning: Could not parse $file as XML, using text replacement"
+              Write-Host "Warning: Could not parse $file as XML, using text replacement for SDK"
               
-              # 文本替换：禁用代码分析
-              if ($content -notmatch 'RunCodeAnalysis') {
-                $content = $content -replace '(<PropertyGroup[^>]*>)', '$1`n    <RunCodeAnalysis>false</RunCodeAnalysis>'
-              } else {
-                $content = $content -replace '(<RunCodeAnalysis>)[^<]*(</RunCodeAnalysis>)', '$1false$2'
-              }
+              # 文本替换：更新 SDK 版本
+              $content = $content -replace '(<WindowsTargetPlatformVersion>)[^<]*(</WindowsTargetPlatformVersion>)', "`$1$sdk`$2"
               
               Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
               Write-Host "Saved with text replacement: $file"
