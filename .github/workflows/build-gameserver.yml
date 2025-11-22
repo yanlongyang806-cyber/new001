@@ -1,129 +1,64 @@
-name: Build GameServer
+name: Build GameServer Win32 Debug
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout Repo
+      uses: actions/checkout@v4
 
-      # === ① 彻底修复所有损坏的 PreBuildEvent（XML 解析版本）===
-      - name: Repair PreBuildEvent in all vcxproj (SAFE XML)
-        shell: powershell
-        run: |
-          Write-Host "=== Fixing PreBuildEvent using XML parser ==="
+    # 固定 VS2022 + MSVC 14.44 工具链
+    - name: Setup MSVC 2022 (14.44)
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x86
+        toolset: 14.44
 
-          Add-Type -AssemblyName System.Xml
+    # 修复旧式项目 XML + 移除 VS2010/VS2012 遗留字段
+    - name: Repair vcxproj XML
+      shell: pwsh
+      run: |
+        Write-Host "=== 清理 vcxproj 遗留字段 ==="
 
-          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName
-            Write-Host "Processing: $file"
+        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+          $file = $_.FullName
+          $xml = Get-Content $file -Raw
 
-            $xml = New-Object System.Xml.XmlDocument
-            $xml.PreserveWhitespace = $true
+          # 删除非法 PreBuildEvent（旧式 vcxproj 会放错位置）
+          $xml = $xml -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>', ''
 
-            try {
-              $xml.Load($file)
-            } catch {
-              Write-Host "❌ XML Failed, skipping: $file"
-              return
-            }
+          # 去掉 VS2010 遗留标签：<Project> 下不允许出现 command event
+          $xml = $xml -replace '(?s)<Project> *\r?\n?', "<Project>"
 
-            $project = $xml.Project
-            if (-not $project) { return }
+          # 删除空行
+          $xml = $xml -replace "`r`n`r`n", "`r`n"
 
-            $modified = $false
+          Set-Content -Path $file -Value $xml -Encoding UTF8
+          Write-Host "修复: $file"
+        }
 
-            # 1. 移除所有 <Project> 下非法 PreBuildEvent
-            foreach ($node in $project.ChildNodes) {
-              if ($node.Name -eq 'PreBuildEvent') {
-                $project.RemoveChild($node)
-                $modified = $true
-                Write-Host "✔ Removed illegal root PreBuildEvent"
-              }
-            }
+    # 开始构建
+    - name: Build CoreGameServer Win32 Debug
+      shell: pwsh
+      run: |
+        Write-Host "=== 开始 MSBuild Win32 Debug ==="
 
-            # 2. 找正确位置（ItemDefinitionGroup -> ClCompile）
-            $itemDef = $project.ItemDefinitionGroup | Where-Object { $_.ClCompile }
-            if (-not $itemDef) {
-              $itemDef = $xml.CreateElement("ItemDefinitionGroup")
-              $project.AppendChild($itemDef) | Out-Null
+        # 显示 include 链
+        $env:CL="/showIncludes"
 
-              $cl = $xml.CreateElement("ClCompile")
-              $itemDef.AppendChild($cl) | Out-Null
+        MSBuild.exe `
+          "Core/GameServer/CoreGameServer.sln" `
+          /t:Rebuild `
+          /p:Configuration=Debug `
+          /p:Platform=Win32 `
+          /p:PlatformToolset=v143 `
+          /m /v:minimal
 
-              $modified = $true
-            } else {
-              $cl = $itemDef.ClCompile
-            }
-
-            # 3. 如果没有 PreBuildEvent，则补一个空节点
-            if (-not $cl.PreBuildEvent) {
-              $pre = $xml.CreateElement("PreBuildEvent")
-              $text = $xml.CreateTextNode("")
-              $pre.AppendChild($text) | Out-Null
-              $cl.AppendChild($pre) | Out-Null
-
-              $modified = $true
-              Write-Host "✔ Added missing PreBuildEvent"
-            }
-
-            if ($modified) {
-              $xml.Save($file)
-              Write-Host "✔ Saved fixed: $file"
-            }
-          }
-
-      # === ② 禁用 SAL / PREfast / CodeAnalysis（彻底）===
-      - name: Disable SAL & CodeAnalysis
-        shell: powershell
-        run: |
-          Write-Host "=== Disabling SAL / PREfast / CodeAnalysis ==="
-
-          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName
-            $c = Get-Content $file -Raw
-
-            $orig = $c
-
-            $c = $c -replace "/analyze", ""
-            $c = $c -replace "<EnablePREfast>.*?</EnablePREfast>", "<EnablePREfast>false</EnablePREfast>"
-            $c = $c -replace "<RunCodeAnalysis>.*?</RunCodeAnalysis>", "<RunCodeAnalysis>false</RunCodeAnalysis>"
-
-            if ($c -notmatch "_NO_CODE_ANALYSIS_") {
-              $c = $c -replace "<PreprocessorDefinitions>([^<]*)</PreprocessorDefinitions>",
-                "<PreprocessorDefinitions>_NO_CODE_ANALYSIS_;$1</PreprocessorDefinitions>"
-            }
-
-            if ($c -ne $orig) {
-              Set-Content $file $c -Encoding UTF8 -NoNewline
-              Write-Host "✔ SAL disabled in: $file"
-            }
-          }
-
-      # === ③ 编译 GameServer ===
-      - name: Build GameServer
-        shell: cmd
-        run: |
-          echo ==== Load VS2022 ====
-          call "I:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x86
-
-          echo ==== MSBUILD START ====
-          "I:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" ^
-            Core\GameServer\CoreGameServer.sln ^
-            /t:Rebuild ^
-            /p:Configuration=Debug ^
-            /p:Platform=Win32 ^
-            /p:PlatformToolset=v143 ^
-            /p:RunCodeAnalysis=false ^
-            /p:EnablePREfast=false ^
-            /p:CodeAnalysisRuleSet=none ^
-            /m
+    - name: Build Done
+      run: echo "Build completed ✔"
