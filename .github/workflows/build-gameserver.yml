@@ -1,8 +1,6 @@
 name: Build GameServer Win32 Debug
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -10,54 +8,19 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout Repo
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Setup MSVC 2022 (14.44)
+    - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: x86
-        toolset: 14.44
 
-    - name: Repair vcxproj files
+    - name: Build
       shell: pwsh
       run: |
-        Write-Host "=== 修复所有 vcxproj 设置 ==="
-        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-          $file = $_.FullName
-          $xml = Get-Content $file -Raw
-          $orig = $xml
-
-          # 删除 PreBuildEvent
-          $xml = $xml -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>', ''
-
-          # 添加禁用 CodeAnalysis
-          if ($xml -notmatch 'DisableCodeAnalysis') {
-            $xml = $xml -replace '</PropertyGroup>', @"
-  <DisableCodeAnalysis>true</DisableCodeAnalysis>
-  <EnablePREfast>false</EnablePREfast>
-</PropertyGroup>
-"@
-          }
-
-          if ($xml -ne $orig) {
-            Set-Content $file $xml -Encoding UTF8
-            Write-Host "✔ 修复: $file"
-          }
-        }
-
-    - name: Build CoreGameServer Win32 Debug
-      shell: pwsh
-      run: |
-        $env:CL="/showIncludes"
-
-        MSBuild.exe `
-          "Core/GameServer/CoreGameServer.sln" `
-          /t:Rebuild `
+        MSBuild.exe "Core/GameServer/CoreGameServer.sln" `
+          /t:Build `
           /p:Configuration=Debug `
           /p:Platform=Win32 `
-          /p:PlatformToolset=v143 `
           /m
-
-    - name: Build completed
-      run: echo "✔ Build completed!"
