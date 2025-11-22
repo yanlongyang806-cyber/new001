@@ -21,6 +21,7 @@ jobs:
           
           $fixedCount = 0
           $sdkUpdatedCount = 0
+          $codeAnalysisDisabled = 0
 
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
             $file = $_.FullName
@@ -50,6 +51,9 @@ jobs:
               $xml = [xml]$content
               
               $updated = $false
+              $caDisabled = $false
+              
+              # 修复 Windows SDK 版本
               foreach ($pg in $xml.Project.PropertyGroup) {
                 foreach ($n in $pg.ChildNodes) {
                   if ($n.Name -eq "WindowsTargetPlatformVersion") {
@@ -58,21 +62,47 @@ jobs:
                   }
                 }
               }
-
-              if ($updated) {
-                $xml.Save($file)
-                $sdkUpdatedCount++
-                Write-Host "Updated SDK: $file"
-              } else {
-                # 即使没有更新 SDK，也要保存修复后的内容
-                if ($fileFixed) {
-                  Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
-                  Write-Host "Saved fixed XML: $file"
+              
+              # 禁用代码分析（修复 sourceannotations.h 语法错误）
+              foreach ($pg in $xml.Project.PropertyGroup) {
+                $runCA = $pg.SelectSingleNode("RunCodeAnalysis")
+                if ($null -eq $runCA) {
+                  $runCA = $xml.CreateElement("RunCodeAnalysis")
+                  $pg.AppendChild($runCA) | Out-Null
                 }
+                $runCA.InnerText = "false"
+                $caDisabled = $true
+              }
+              
+              # 在 ItemDefinitionGroup 中禁用 EnablePREfast
+              foreach ($idg in $xml.Project.ItemDefinitionGroup) {
+                $clCompile = $idg.SelectSingleNode("ClCompile")
+                if ($null -ne $clCompile) {
+                  $enablePREfast = $clCompile.SelectSingleNode("EnablePREfast")
+                  if ($null -ne $enablePREfast) {
+                    $enablePREfast.InnerText = "false"
+                    $caDisabled = $true
+                  }
+                }
+              }
+
+              if ($updated -or $caDisabled -or $fileFixed) {
+                $xml.Save($file)
+                if ($updated) { $sdkUpdatedCount++ }
+                if ($caDisabled) { $codeAnalysisDisabled++ }
+                Write-Host "Updated: $file"
               }
             } catch {
               # XML 解析失败，使用文本替换作为后备方案
               Write-Host "Warning: Could not parse $file as XML, using text replacement"
+              
+              # 文本替换：禁用代码分析
+              if ($content -notmatch 'RunCodeAnalysis') {
+                $content = $content -replace '(<PropertyGroup[^>]*>)', '$1`n    <RunCodeAnalysis>false</RunCodeAnalysis>'
+              } else {
+                $content = $content -replace '(<RunCodeAnalysis>)[^<]*(</RunCodeAnalysis>)', '$1false$2'
+              }
+              
               Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
               Write-Host "Saved with text replacement: $file"
             }
@@ -81,6 +111,24 @@ jobs:
           Write-Host "=== Summary ==="
           Write-Host "Files with XML structure fixed: $fixedCount"
           Write-Host "Files with SDK updated: $sdkUpdatedCount"
+          Write-Host "Files with code analysis disabled: $codeAnalysisDisabled"
+
+      - name: Fix log2 conflict in stdtypes.h
+        shell: powershell
+        run: |
+          $file = "libs\UtilitiesLib\stdtypes.h"
+          if (Test-Path $file) {
+            $content = Get-Content $file -Raw -Encoding UTF8
+            
+            # 重命名 log2 函数以避免与 Windows SDK 冲突
+            $content = $content -replace '__forceinline static int log2\(int val\)', '__forceinline static int log2_int(int val)'
+            $content = $content -replace '\b__BIT\(log2\(', '__BIT(log2_int('
+            
+            Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
+            Write-Host "Fixed log2 conflict in $file"
+          } else {
+            Write-Host "Warning: $file not found"
+          }
 
       - name: Copy StructParser Tools (DEBUG MODE)
         shell: powershell
