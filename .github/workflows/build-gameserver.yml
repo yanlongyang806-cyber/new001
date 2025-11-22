@@ -27,6 +27,7 @@ jobs:
             $content = Get-Content $file -Raw -Encoding UTF8
             
             $originalContent = $content
+            $fileFixed = $false
             
             # 使用多行正则表达式修复 PreBuildEvent 位置（在 </ImportGroup> 和 </Project> 之间）
             $content = $content -replace '(?s)(</ImportGroup>\s*)<PreBuildEvent>.*?</PreBuildEvent>(\s*</Project>)', '$1$2'
@@ -40,6 +41,7 @@ jobs:
             # 如果内容被修改，标记为已修复
             if ($content -ne $originalContent) {
               $fixedCount++
+              $fileFixed = $true
               Write-Host "Fixed XML structure: $file"
             }
             
@@ -63,8 +65,8 @@ jobs:
                 Write-Host "Updated SDK: $file"
               } else {
                 # 即使没有更新 SDK，也要保存修复后的内容
-                Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
-                if ($fixedCount -gt 0) {
+                if ($fileFixed) {
+                  Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
                   Write-Host "Saved fixed XML: $file"
                 }
               }
