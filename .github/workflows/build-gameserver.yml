@@ -1,91 +1,28 @@
-name: Build GameServer
+- name: Repair broken PreBuildEvent XML (FULL FIX)
+  shell: powershell
+  run: |
+    Write-Host "=== Repairing broken PreBuildEvent XML across all vcxproj ==="
 
-on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+    Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+      $file = $_.FullName
+      $xml = Get-Content $file -Raw -Encoding UTF8
+      
+      $orig = $xml
 
-jobs:
-  build:
-    runs-on: self-hosted
+      # 1. 删除所有 <Project> 下的孤立 PreBuildEvent
+      $xml = $xml -replace '(?s)<Project>[\s\r\n]*<PreBuildEvent>.*?</PreBuildEvent>', '<Project>'
 
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      # 2. 删除所有不在 ItemDefinitionGroup 里的 PreBuildEvent
+      $xml = $xml -replace '(?s)(</ImportGroup>)(\s*<PreBuildEvent>.*?</PreBuildEvent>)', '$1'
 
-    # 🛠️ STEP 1 — 全局禁用 CodeAnalysis / PREfast / SAL
-    - name: Disable ALL Code Analysis in vcxproj
-      shell: powershell
-      run: |
-        Write-Host "=== Disable Code Analysis in all vcxproj files ==="
-        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-          $file = $_.FullName
-          $text = Get-Content $file -Raw -Encoding UTF8
-          $orig = $text
+      # 3. 如果项目没有 PreBuildEvent，则补到正确位置
+      if ($xml -notmatch '<PreBuildEvent>') {
+        # 加一个空的，防止构建器报缺少节点
+        $xml = $xml -replace '(</ItemDefinitionGroup>)', "`n    <PreBuildEvent></PreBuildEvent>`n$1"
+      }
 
-          # 删除所有 /analyze
-          $text = $text -replace "/analyze", ""
-
-          # 删除 EnablePREfast
-          $text = $text -replace "<EnablePREfast>.*?</EnablePREfast>", "<EnablePREfast>false</EnablePREfast>"
-
-          # 删除 RunCodeAnalysis
-          $text = $text -replace "<RunCodeAnalysis>.*?</RunCodeAnalysis>", "<RunCodeAnalysis>false</RunCodeAnalysis>"
-
-          # 添加 _NO_CODE_ANALYSIS_
-          if ($text -notmatch "_NO_CODE_ANALYSIS_") {
-            $text = $text -replace "<PreprocessorDefinitions>([^<]*)</PreprocessorDefinitions>", "<PreprocessorDefinitions>_NO_CODE_ANALYSIS_;$1</PreprocessorDefinitions>"
-          }
-
-          if ($text -ne $orig) {
-            Set-Content -Path $file -Value $text -Encoding UTF8 -NoNewline
-            Write-Host "✔ Fixed CodeAnalysis: $file"
-          }
-        }
-
-    # 🛠️ STEP 2 — 修复自定义 log2 冲突（你的脚本保留）
-    - name: Fix log2 conflict in stdtypes.h
-      shell: powershell
-      run: |
-        $file = "libs\UtilitiesLib\stdtypes.h"
-        if (Test-Path $file) {
-          $content = Get-Content $file -Raw -Encoding UTF8
-          $original = $content
-
-          $content = $content -replace '__forceinline static int log2\(int val\)', '__forceinline static int log2_int(int val)'
-          $content = $content -replace 'log2\(val\)', 'log2_int(val)'
-
-          if ($content -ne $original) {
-            Set-Content -Path $file -Value $content -Encoding UTF8 -NoNewline
-            Write-Host "✔ Fixed: $file"
-          }
-        }
-
-    # 🛠️ STEP 3 — 复制 StructParser 工具（保持原样）
-    - name: Copy StructParser Tools
-      shell: powershell
-      run: |
-          $src = "I:\gp5\Utilities\Bin"
-          $dst = "$env:RUNNER_TEMP"
-          if (-Not (Test-Path $src)) { Write-Error "Missing: $src"; exit 1 }
-          Copy-Item "$src\*" $dst -Recurse -Force
-          Write-Host "✔ Tools Copied."
-
-    # 🛠️ STEP 4 — 正式编译（核心）
-    - name: Build CoreGameServer
-      shell: cmd
-      run: |
-        echo ==== Load MSVC 14.44 Toolchain ====
-        call "I:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x86
-
-        echo ==== START MSBUILD ====
-        "I:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" ^
-          Core\GameServer\CoreGameServer.sln ^
-          /t:Rebuild ^
-          /p:Configuration=Debug ^
-          /p:Platform=Win32 ^
-          /p:PlatformToolset=v143 ^
-          /p:RunCodeAnalysis=false ^
-          /p:EnablePREfast=false ^
-          /p:CodeAnalysisRuleSet=none ^
-          /m
+      if ($xml -ne $orig) {
+        Write-Host "✔ Fixed PreBuildEvent structure: $file"
+        Set-Content -Path $file -Value $xml -Encoding UTF8 -NoNewline
+      }
+    }
