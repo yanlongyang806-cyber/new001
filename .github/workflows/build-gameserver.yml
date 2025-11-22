@@ -16,11 +16,12 @@ jobs:
       with:
         arch: x86
 
-    - name: Build
+    - name: Build CoreGameServer (Win32 Debug)
       shell: pwsh
       run: |
+        Write-Host "=== Building CoreGameServer Win32 Debug ==="
         MSBuild.exe "Core/GameServer/CoreGameServer.sln" `
-          /t:Build `
+          /t:Rebuild `
           /p:Configuration=Debug `
           /p:Platform=Win32 `
           /m
