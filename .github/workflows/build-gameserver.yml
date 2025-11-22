@@ -9,20 +9,11 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: self-hosted  # 使用本地 Windows 机器上的 GitHub Runner
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-
-    - name: 安装 Visual Studio + MSVC
-      uses: microsoft/setup-vs@v1
-      with:
-        vs-version: "2022"
-        components: "Microsoft.VisualStudio.Component.VC.Tools.x86.x64;Microsoft.VisualStudio.Component.Windows10SDK.19041"
-
-    - name: 设置 MSBuild
-      uses: microsoft/setup-msbuild@v1
 
     - name: 修复所有项目 SDK（强制设置为 10.0.19041.0）
       shell: pwsh
