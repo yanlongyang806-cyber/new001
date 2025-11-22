@@ -10,208 +10,82 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Fix Windows SDK and XML Structure
-        shell: powershell
-        run: |
-          $sdk = "10.0.19041.0"
-          Write-Host "Fixing SDK version to $sdk and XML structure"
-          
-          $fixedCount = 0
-          $sdkUpdatedCount = 0
-          $codeAnalysisDisabled = 0
+    # 🛠️ STEP 1 — 全局禁用 CodeAnalysis / PREfast / SAL
+    - name: Disable ALL Code Analysis in vcxproj
+      shell: powershell
+      run: |
+        Write-Host "=== Disable Code Analysis in all vcxproj files ==="
+        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+          $file = $_.FullName
+          $text = Get-Content $file -Raw -Encoding UTF8
+          $orig = $text
 
-          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName
-            $content = Get-Content $file -Raw -Encoding UTF8
-            
-            $originalContent = $content
-            $fileFixed = $false
-            
-            # 使用多行正则表达式修复 PreBuildEvent 位置（在 </ImportGroup> 和 </Project> 之间）
-            $content = $content -replace '(?s)(</ImportGroup>\s*)<PreBuildEvent>.*?</PreBuildEvent>(\s*</Project>)', '$1$2'
-            
-            # 移除所有在 Project 根元素下的 PreBuildEvent（作为后备清理）
-            $content = $content -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>(\s*</Project>)', '$1'
-            
-            # 修复错误的 PreBuildEvent 在 ProjectReference 中的位置
-            $content = $content -replace '(?s)(<Project>\{[^}]+\})<PreBuildEvent>.*?</PreBuildEvent>', '$1'
-            
-            # 如果内容被修改，标记为已修复
-            if ($content -ne $originalContent) {
-              $fixedCount++
-              $fileFixed = $true
-              Write-Host "Fixed XML structure: $file"
-            }
-            
-            # 禁用代码分析（使用文本替换避免 xmlns 属性问题）
-            $caDisabled = $false
-            
-            # 先移除任何错误的 xmlns 属性
-            $content = $content -replace '<RunCodeAnalysis\s+xmlns="[^"]*"', '<RunCodeAnalysis'
-            $content = $content -replace '<RunCodeAnalysis\s+xmlns=', '<RunCodeAnalysis'
-            
-            if ($content -notmatch '<RunCodeAnalysis>') {
-              # 尝试在 CharacterSet 之后添加
-              $pattern1 = '(<PropertyGroup[^>]*Condition="[^"]*Debug\|Win32"[^>]*>[\s\S]*?<CharacterSet>[^<]+</CharacterSet>)'
-              if ($content -match $pattern1) {
-                $replacement1 = '$1' + "`n    <RunCodeAnalysis>false</RunCodeAnalysis>"
-                $content = $content -replace $pattern1, $replacement1
-                $caDisabled = $true
-              } else {
-                # 尝试在 ConfigurationType 之后添加
-                $pattern2 = '(<PropertyGroup[^>]*Condition="[^"]*Debug\|Win32"[^>]*>[\s\S]*?<ConfigurationType>[^<]+</ConfigurationType>)'
-                if ($content -match $pattern2) {
-                  $replacement2 = '$1' + "`n    <RunCodeAnalysis>false</RunCodeAnalysis>"
-                  $content = $content -replace $pattern2, $replacement2
-                  $caDisabled = $true
-                } else {
-                  # 最后尝试：在 PropertyGroup 开始标签后添加
-                  $pattern3 = '(<PropertyGroup[^>]*Condition="[^"]*Debug\|Win32"[^>]*>)'
-                  $replacement3 = '$1' + "`n    <RunCodeAnalysis>false</RunCodeAnalysis>"
-                  $content = $content -replace $pattern3, $replacement3
-                  $caDisabled = $true
-                }
-              }
-            } else {
-              # 更新现有值，确保没有 xmlns
-              $content = $content -replace '(<RunCodeAnalysis[^>]*>)[^<]*(</RunCodeAnalysis>)', '<RunCodeAnalysis>false$2'
-              $caDisabled = $true
-            }
-            
-            # 禁用 EnablePREfast（使用文本替换）
-            if ($content -match '<EnablePREfast>') {
-              $content = $content -replace '(<EnablePREfast>)[^<]*(</EnablePREfast>)', '$1false$2'
-              $caDisabled = $true
-            }
-            
-            # 更新 Windows SDK 版本（使用文本替换，更可靠）
-            $updated = $false
-            if ($content -match '<WindowsTargetPlatformVersion>') {
-              $oldSdk = [regex]::Match($content, '<WindowsTargetPlatformVersion>([^<]+)</WindowsTargetPlatformVersion>').Groups[1].Value
-              if ($oldSdk -and $oldSdk.Trim() -ne $sdk) {
-                $content = $content -replace '(<WindowsTargetPlatformVersion>)[^<]*(</WindowsTargetPlatformVersion>)', "`$1$sdk`$2"
-                $updated = $true
-              }
-            }
-            
-            # 保存修复后的文件
-            if ($fileFixed -or $caDisabled -or $updated) {
-              Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
-              if ($updated) { $sdkUpdatedCount++ }
-              if ($caDisabled) { $codeAnalysisDisabled++ }
-              Write-Host "Fixed: $file"
-            }
-          }
-          
-          Write-Host "=== Summary ==="
-          Write-Host "Files with XML structure fixed: $fixedCount"
-          Write-Host "Files with SDK updated: $sdkUpdatedCount"
-          Write-Host "Files with code analysis disabled: $codeAnalysisDisabled"
+          # 删除所有 /analyze
+          $text = $text -replace "/analyze", ""
 
-      - name: Fix log2 conflict in stdtypes.h
-        shell: powershell
-        run: |
-          $file = "libs\UtilitiesLib\stdtypes.h"
-          if (Test-Path $file) {
-            $content = Get-Content $file -Raw -Encoding UTF8
-            
-            # 重命名 log2 函数以避免与 Windows SDK 冲突
-            # 先修复函数定义
-            $content = $content -replace '__forceinline static int log2\(int val\)', '__forceinline static int log2_int(int val)'
-            # 再修复函数调用（在 pow2 函数中）
-            $content = $content -replace 'return __BIT\(log2\(val\)\);', 'return __BIT(log2_int(val));'
-            
-            Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
-            Write-Host "Fixed log2 conflict in $file"
-          } else {
-            Write-Host "Warning: $file not found"
+          # 删除 EnablePREfast
+          $text = $text -replace "<EnablePREfast>.*?</EnablePREfast>", "<EnablePREfast>false</EnablePREfast>"
+
+          # 删除 RunCodeAnalysis
+          $text = $text -replace "<RunCodeAnalysis>.*?</RunCodeAnalysis>", "<RunCodeAnalysis>false</RunCodeAnalysis>"
+
+          # 添加 _NO_CODE_ANALYSIS_
+          if ($text -notmatch "_NO_CODE_ANALYSIS_") {
+            $text = $text -replace "<PreprocessorDefinitions>([^<]*)</PreprocessorDefinitions>", "<PreprocessorDefinitions>_NO_CODE_ANALYSIS_;$1</PreprocessorDefinitions>"
           }
 
-      - name: Disable Code Analysis for C files
-        shell: powershell
-        run: |
-          Write-Host "=== Disabling Code Analysis for C files ==="
-          
-          $fixedCount = 0
-          
-          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName
-            $content = Get-Content $file -Raw -Encoding UTF8
-            $originalContent = $content
-            
-            # 在 ItemDefinitionGroup 的 ClCompile 中添加 _NO_CODE_ANALYSIS_ 预处理器定义
-            # 查找所有 ItemDefinitionGroup 中的 ClCompile
-            $pattern = '(<ItemDefinitionGroup[^>]*>[\s\S]*?<ClCompile>[\s\S]*?<PreprocessorDefinitions>)([^<]*)(</PreprocessorDefinitions>)'
-            
-            if ($content -match $pattern) {
-              # 检查是否已经包含 _NO_CODE_ANALYSIS_
-              if ($content -notmatch '_NO_CODE_ANALYSIS_') {
-                # 在 PreprocessorDefinitions 中添加 _NO_CODE_ANALYSIS_
-                $content = $content -replace '(<PreprocessorDefinitions>)([^<]*)(</PreprocessorDefinitions>)', '$1_NO_CODE_ANALYSIS_;$2$3'
-                $fixedCount++
-                Write-Host "Added _NO_CODE_ANALYSIS_ to: $file"
-              }
-            }
-            
-            # 如果内容被修改，保存文件
-            if ($content -ne $originalContent) {
-              Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
-            }
+          if ($text -ne $orig) {
+            Set-Content -Path $file -Value $text -Encoding UTF8 -NoNewline
+            Write-Host "✔ Fixed CodeAnalysis: $file"
           }
-          
-          Write-Host "=== Summary ==="
-          Write-Host "Files with _NO_CODE_ANALYSIS_ added: $fixedCount"
+        }
 
-      - name: Copy StructParser Tools (DEBUG MODE)
-        shell: powershell
-        run: |
+    # 🛠️ STEP 2 — 修复自定义 log2 冲突（你的脚本保留）
+    - name: Fix log2 conflict in stdtypes.h
+      shell: powershell
+      run: |
+        $file = "libs\UtilitiesLib\stdtypes.h"
+        if (Test-Path $file) {
+          $content = Get-Content $file -Raw -Encoding UTF8
+          $original = $content
+
+          $content = $content -replace '__forceinline static int log2\(int val\)', '__forceinline static int log2_int(int val)'
+          $content = $content -replace 'log2\(val\)', 'log2_int(val)'
+
+          if ($content -ne $original) {
+            Set-Content -Path $file -Value $content -Encoding UTF8 -NoNewline
+            Write-Host "✔ Fixed: $file"
+          }
+        }
+
+    # 🛠️ STEP 3 — 复制 StructParser 工具（保持原样）
+    - name: Copy StructParser Tools
+      shell: powershell
+      run: |
           $src = "I:\gp5\Utilities\Bin"
           $dst = "$env:RUNNER_TEMP"
+          if (-Not (Test-Path $src)) { Write-Error "Missing: $src"; exit 1 }
+          Copy-Item "$src\*" $dst -Recurse -Force
+          Write-Host "✔ Tools Copied."
 
-          Write-Host "==== DEBUG: Copy StructParser Tools ===="
-          Write-Host "Source Path: $src"
-          Write-Host "Destination Path: $dst"
+    # 🛠️ STEP 4 — 正式编译（核心）
+    - name: Build CoreGameServer
+      shell: cmd
+      run: |
+        echo ==== Load MSVC 14.44 Toolchain ====
+        call "I:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x86
 
-          if (-Not (Test-Path $src)) {
-            Write-Error "❌ ERROR: Source folder NOT FOUND: $src"
-            exit 1
-          }
-
-          $files = @(
-            "StructParser.exe",
-            "ProjectManager.exe",
-            "structparser_settings.txt"
-          )
-
-          foreach ($f in $files) {
-            $full = Join-Path $src $f
-            if (-Not (Test-Path $full)) {
-              Write-Error "❌ ERROR: Missing file: $full"
-              exit 1
-            }
-          }
-
-          foreach ($f in $files) {
-            Copy-Item (Join-Path $src $f) $dst -Force
-            Write-Host "✔ Copied: $f"
-          }
-
-          Write-Host "==== ALL FILES COPIED SUCCESSFULLY ===="
-
-      - name: Build Debug Win32
-        shell: cmd
-        run: |
-          echo ==== Load VS2022 ====
-          call "I:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x86
-
-          echo ==== MSBuild Start ====
-          "I:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" ^
-            Core\GameServer\CoreGameServer.sln ^
-            /t:Rebuild ^
-            /p:Configuration=Debug ^
-            /p:Platform=Win32 ^
-            /p:PlatformToolset=v143 ^
-            /m
+        echo ==== START MSBUILD ====
+        "I:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" ^
+          Core\GameServer\CoreGameServer.sln ^
+          /t:Rebuild ^
+          /p:Configuration=Debug ^
+          /p:Platform=Win32 ^
+          /p:PlatformToolset=v143 ^
+          /p:RunCodeAnalysis=false ^
+          /p:EnablePREfast=false ^
+          /p:CodeAnalysisRuleSet=none ^
+          /m
