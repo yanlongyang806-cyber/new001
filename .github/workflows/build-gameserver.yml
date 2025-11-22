@@ -18,6 +18,91 @@ jobs:
     - name: 设置 MSBuild 环境
       uses: microsoft/setup-msbuild@v2
       
+    - name: 检测可用的 Windows SDK 版本
+      shell: pwsh
+      run: |
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "检测可用的 Windows SDK 版本" -ForegroundColor Cyan
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host ""
+        
+        # Windows SDK 通常安装在以下路径
+        $sdkIncludePath = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
+        $sdkLibPath = "${env:ProgramFiles(x86)}\Windows Kits\10\Lib"
+        
+        Write-Host "检查 Windows SDK 安装路径..." -ForegroundColor Yellow
+        Write-Host "  Include 路径: $sdkIncludePath" -ForegroundColor Gray
+        Write-Host "  Lib 路径: $sdkLibPath" -ForegroundColor Gray
+        Write-Host ""
+        
+        $sdkVersion = $null
+        
+        # 方法1：从 Include 目录检测
+        if (Test-Path $sdkIncludePath) {
+          Write-Host "正在扫描 Include 目录..." -ForegroundColor Yellow
+          $sdkVersions = Get-ChildItem -Path $sdkIncludePath -Directory -ErrorAction SilentlyContinue | 
+            Where-Object { $_.Name -match '^10\.\d+\.\d+' } |
+            Sort-Object { [version]$_.Name } -Descending
+          
+          if ($sdkVersions) {
+            $sdkVersion = $sdkVersions[0].Name
+            Write-Host "✓ 从 Include 目录找到 SDK 版本: $sdkVersion" -ForegroundColor Green
+          }
+        }
+        
+        # 方法2：从 Lib 目录检测（备用）
+        if (-not $sdkVersion -and (Test-Path $sdkLibPath)) {
+          Write-Host "正在扫描 Lib 目录..." -ForegroundColor Yellow
+          $sdkVersions = Get-ChildItem -Path $sdkLibPath -Directory -ErrorAction SilentlyContinue | 
+            Where-Object { $_.Name -match '^10\.\d+\.\d+' } |
+            Sort-Object { [version]$_.Name } -Descending
+          
+          if ($sdkVersions) {
+            $sdkVersion = $sdkVersions[0].Name
+            Write-Host "✓ 从 Lib 目录找到 SDK 版本: $sdkVersion" -ForegroundColor Green
+          }
+        }
+        
+        # 方法3：使用 vswhere 查询（如果可用）
+        if (-not $sdkVersion) {
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            Write-Host "正在使用 vswhere 查询..." -ForegroundColor Yellow
+            $vsPath = & $vswhere -latest -property installationPath
+            if ($vsPath) {
+              $sdkManifest = Join-Path $vsPath "VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt"
+              if (Test-Path $sdkManifest) {
+                # 尝试从 Visual Studio 安装中获取信息
+                Write-Host "  找到 Visual Studio 安装: $vsPath" -ForegroundColor Gray
+              }
+            }
+          }
+        }
+        
+        # 如果仍然没有找到，使用默认值
+        if (-not $sdkVersion) {
+          Write-Host "⚠ 未找到具体的 SDK 版本，将使用 '10.0'（让 MSBuild 自动选择）" -ForegroundColor Yellow
+          $sdkVersion = "10.0"
+        } else {
+          Write-Host ""
+          Write-Host "找到的所有 SDK 版本:" -ForegroundColor Cyan
+          if (Test-Path $sdkIncludePath) {
+            $allVersions = Get-ChildItem -Path $sdkIncludePath -Directory -ErrorAction SilentlyContinue | 
+              Where-Object { $_.Name -match '^10\.\d+\.\d+' } |
+              Sort-Object { [version]$_.Name } -Descending |
+              Select-Object -ExpandProperty Name
+            $allVersions | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+          }
+        }
+        
+        Write-Host ""
+        Write-Host "将使用 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
+        Write-Host ""
+        
+        # 将版本存储到环境变量
+        echo "WINDOWS_SDK_VERSION=$sdkVersion" >> $env:GITHUB_ENV
+        Write-Host "已设置环境变量 WINDOWS_SDK_VERSION=$sdkVersion" -ForegroundColor Green
+      
     - name: 调试 - 显示目录结构
       shell: pwsh
       run: |
@@ -211,15 +296,25 @@ jobs:
         Write-Host "   这将覆盖项目文件中的旧工具集设置" -ForegroundColor Yellow
         Write-Host ""
         
+        # 获取检测到的 Windows SDK 版本
+        $sdkVersion = $env:WINDOWS_SDK_VERSION
+        if (-not $sdkVersion) {
+          Write-Host "⚠ 未找到 WINDOWS_SDK_VERSION 环境变量，使用默认值 10.0" -ForegroundColor Yellow
+          $sdkVersion = "10.0"
+        }
+        Write-Host "使用 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
+        Write-Host ""
+        
         # Build with error handling
         # 强制使用 VS2022 工具集（v143），覆盖项目文件中的旧设置
-        # 使用 /p 参数可以覆盖项目文件中的 PlatformToolset 设置
+        # 使用检测到的 Windows SDK 版本覆盖项目文件中的硬编码版本
+        # 使用 /p 参数可以覆盖项目文件中的 PlatformToolset 和 WindowsTargetPlatformVersion 设置
         $buildArgs = @(
           $solutionPath,
           "/p:Configuration=Debug",
           "/p:Platform=Win32",
           "/p:PlatformToolset=v143",
-          "/p:WindowsTargetPlatformVersion=10.0",
+          "/p:WindowsTargetPlatformVersion=$sdkVersion",
           "/p:UseEnv=true",
           "/m",
           "/v:minimal",
@@ -301,12 +396,22 @@ jobs:
           exit 0
         }
         
+        # 获取检测到的 Windows SDK 版本
+        $sdkVersion = $env:WINDOWS_SDK_VERSION
+        if (-not $sdkVersion) {
+          Write-Host "⚠ 未找到 WINDOWS_SDK_VERSION 环境变量，使用默认值 10.0" -ForegroundColor Yellow
+          $sdkVersion = "10.0"
+        }
+        Write-Host "使用 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
+        Write-Host ""
+        
         Write-Host "开始编译 Full Debug 配置..." -ForegroundColor Green
         & $msbuild `
           $solutionPath `
           /p:Configuration="Full Debug" `
           /p:Platform=Win32 `
           /p:PlatformToolset=v143 `
+          /p:WindowsTargetPlatformVersion=$sdkVersion `
           /m `
           /v:minimal `
           /nologo
