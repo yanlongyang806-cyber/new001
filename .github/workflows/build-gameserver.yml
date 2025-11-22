@@ -1,63 +1,25 @@
 name: Build GameServer
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025
 
     steps:
-    - name: Checkout Repo
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 安装 VS Build Tools（MSVC v143 + Windows SDK）
-      shell: pwsh
-      run: |
-        Write-Host "=== 安装 VS Build Tools（需要 3~5 分钟） ==="
-
-        Invoke-WebRequest `
-          -Uri "https://aka.ms/vs/17/release/vs_BuildTools.exe" `
-          -OutFile "vs_buildtools.exe"
-
-        Start-Process ".\vs_buildtools.exe" `
-          -ArgumentList `
-            "--quiet",
-            "--wait",
-            "--norestart",
-            "--nocache",
-            "--add", "Microsoft.VisualStudio.Workload.VCTools",
-            "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-            "--add", "Microsoft.VisualStudio.Component.VC.CoreBuildTools",
-            "--add", "Microsoft.VisualStudio.Component.Windows10SDK.19041",
-            "--add", "Microsoft.VisualStudio.Component.VC.Redist.14.Latest",
-            "--add", "Microsoft.VisualStudio.Component.VC.CMake.Project" `
-          -NoNewWindow -Wait
-
-    - name: 初始化 MSVC 环境
-      uses: ilammy/msvc-dev-cmd@v1
+    - name: 安装 MSVC v143
+      uses: actions/setup-vs@v2
       with:
-        arch: x86
-        toolset: 143
+        vs-version: latest
 
-    - name: 修复所有项目 SDK（强制降级到 10.0.20348.0）
-      shell: pwsh
-      run: |
-        $sdk = "10.0.20348.0"
-        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-          $file = $_.FullName
-          (Get-Content $file) `
-            -replace "<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>",
-                     "<WindowsTargetPlatformVersion>$sdk</WindowsTargetPlatformVersion>" `
-            | Set-Content $file
-          Write-Host "修复: $file"
-        }
+    - name: 初始化 MSBuild
+      uses: microsoft/setup-msbuild@v2
 
-    - name: 查找解决方案文件
+    - name: 查找解决方案
       id: sln
       shell: pwsh
       run: |
@@ -75,7 +37,7 @@ jobs:
           /p:PlatformToolset=v143 `
           /m
 
-    - name: 上传构建产物
+    - name: 上传产物
       uses: actions/upload-artifact@v4
       with:
         name: GameServer-Debug
