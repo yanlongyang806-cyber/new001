@@ -1,509 +1,58 @@
 name: Build GameServer
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
-    
+    runs-on: windows-2022   # 必须使用 VS2022 + 可用 SDK 的镜像
+
     steps:
-    - name: 检出代码
+    - name: Checkout
       uses: actions/checkout@v4
-      
-    - name: 设置 MSBuild 环境
-      uses: microsoft/setup-msbuild@v2
-      
-    - name: 检测可用的 Windows SDK 版本
+
+    - name: 初始化 VS2022（v143 工具集）
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        toolset: 143
+
+    - name: 自动修复所有项目的 Windows SDK 版本
       shell: pwsh
       run: |
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "检测可用的 Windows SDK 版本" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host ""
-        
-        # Windows SDK 通常安装在以下路径
-        $sdkIncludePath = "${env:ProgramFiles(x86)}\Windows Kits\10\Include"
-        $sdkLibPath = "${env:ProgramFiles(x86)}\Windows Kits\10\Lib"
-        
-        Write-Host "检查 Windows SDK 安装路径..." -ForegroundColor Yellow
-        Write-Host "  Include 路径: $sdkIncludePath" -ForegroundColor Gray
-        Write-Host "  Lib 路径: $sdkLibPath" -ForegroundColor Gray
-        Write-Host ""
-        
-        # 简化方案：直接使用 10.0 让 MSBuild 自动选择已安装的最新版本
-        # 这样可以避免版本不匹配的问题，MSBuild 会自动选择兼容的版本
-        Write-Host "使用简化方案：直接使用 '10.0' 让 MSBuild 自动选择已安装的最新版本" -ForegroundColor Yellow
-        Write-Host "这样可以避免版本不匹配的问题" -ForegroundColor Yellow
-        Write-Host ""
-        
-        # 列出所有可用的 SDK 版本（仅用于信息显示）
-        if (Test-Path $sdkIncludePath) {
-          Write-Host "扫描到的所有 SDK 版本（仅供参考）:" -ForegroundColor Cyan
-          $allVersions = Get-ChildItem -Path $sdkIncludePath -Directory -ErrorAction SilentlyContinue | 
-            Where-Object { $_.Name -match '^10\.\d+\.\d+' } |
-            Sort-Object { [version]$_.Name } -Descending |
-            Select-Object -ExpandProperty Name
-          if ($allVersions) {
-            $allVersions | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
-          } else {
-            Write-Host "  未找到任何版本" -ForegroundColor Gray
-          }
-          Write-Host ""
+        Write-Host "=== 自动修复 Windows SDK 版本 ==="
+        $sdk = "10.0.20348.0"
+        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+          $file = $_.FullName
+          Write-Host "修复: $file"
+          
+          (Get-Content $file) `
+            -replace "<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>", "<WindowsTargetPlatformVersion>$sdk</WindowsTargetPlatformVersion>" `
+            | Set-Content $file
         }
-        
-        # 直接使用 10.0，让 MSBuild 自动选择
-        $sdkVersion = "10.0"
-        Write-Host "将使用 Windows SDK 版本: $sdkVersion（MSBuild 将自动选择已安装的最新兼容版本）" -ForegroundColor Green
-        Write-Host ""
-        
-        # 将版本存储到多个环境变量，确保 MSBuild 能够识别
-        # WindowsTargetPlatformVersion - MSBuild 属性
-        # WindowsSDKVersion - 某些情况下 MSBuild 也会检查这个环境变量
-        echo "WINDOWS_SDK_VERSION=$sdkVersion" >> $env:GITHUB_ENV
-        echo "WindowsTargetPlatformVersion=$sdkVersion" >> $env:GITHUB_ENV
-        echo "WindowsSDKVersion=$sdkVersion" >> $env:GITHUB_ENV
-        
-        Write-Host "已设置以下环境变量:" -ForegroundColor Green
-        Write-Host "  WINDOWS_SDK_VERSION=$sdkVersion" -ForegroundColor Gray
-        Write-Host "  WindowsTargetPlatformVersion=$sdkVersion" -ForegroundColor Gray
-        Write-Host "  WindowsSDKVersion=$sdkVersion" -ForegroundColor Gray
-        Write-Host ""
-      
-    - name: 调试 - 显示目录结构
+
+    - name: 查找解决方案
+      id: sln
       shell: pwsh
       run: |
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "调试信息：目录结构检查" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "当前工作目录: $(Get-Location)" -ForegroundColor Yellow
-        Write-Host "工作目录完整路径: $((Get-Location).Path)" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "=== 根目录内容（详细）===" -ForegroundColor Cyan
-        $rootItems = Get-ChildItem | Select-Object Name, PSIsContainer, FullName
-        $rootItems | Format-Table -AutoSize
-        Write-Host ""
-        Write-Host "=== 检查可能的路径 ===" -ForegroundColor Cyan
-        $testPaths = @(
-          "Core\GameServer\CoreGameServer.sln",
-          "package\Core\GameServer\CoreGameServer.sln",
-          ".\Core\GameServer\CoreGameServer.sln",
-          ".\package\Core\GameServer\CoreGameServer.sln"
-        )
-        foreach ($testPath in $testPaths) {
-          $exists = Test-Path $testPath
-          $status = if ($exists) { "✓ 存在" } else { "✗ 不存在" }
-          $color = if ($exists) { "Green" } else { "Red" }
-          Write-Host "  $testPath : $status" -ForegroundColor $color
-        }
-        Write-Host ""
-        Write-Host "=== 查找所有 .sln 文件 ===" -ForegroundColor Cyan
-        $slnFiles = Get-ChildItem -Recurse -Filter "*.sln" -ErrorAction SilentlyContinue
-        if ($slnFiles) {
-          Write-Host "找到 $($slnFiles.Count) 个 .sln 文件:" -ForegroundColor Green
-          $slnFiles | ForEach-Object {
-            $relativePath = $_.FullName.Replace((Get-Location).Path + "\", "")
-            Write-Host "  $relativePath" -ForegroundColor White
-            Write-Host "    完整路径: $($_.FullName)" -ForegroundColor Gray
-          }
-        } else {
-          Write-Host "未找到任何 .sln 文件！" -ForegroundColor Red
-        }
-        Write-Host ""
-        Write-Host "=== 查找 CoreGameServer.sln ===" -ForegroundColor Cyan
-        $coreSln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" -ErrorAction SilentlyContinue
-        if ($coreSln) {
-          Write-Host "找到 CoreGameServer.sln:" -ForegroundColor Green
-          $coreSln | ForEach-Object {
-            $relativePath = $_.FullName.Replace((Get-Location).Path + "\", "")
-            Write-Host "  相对路径: $relativePath" -ForegroundColor White
-            Write-Host "  完整路径: $($_.FullName)" -ForegroundColor Gray
-            Write-Host "  目录: $($_.DirectoryName)" -ForegroundColor Gray
-          }
-        } else {
-          Write-Host "未找到 CoreGameServer.sln 文件！" -ForegroundColor Red
-        }
-        Write-Host ""
-        Write-Host "=== 目录树结构（前 4 层）===" -ForegroundColor Cyan
-        Get-ChildItem -Recurse -Directory -Depth 3 -ErrorAction SilentlyContinue | 
-          Select-Object FullName | 
-          ForEach-Object { 
-            $relative = $_.FullName.Replace((Get-Location).Path + "\", "")
-            if ($relative -match "^Core" -or $relative -match "^package" -or $relative -match "GameServer") {
-              Write-Host "  $relative" -ForegroundColor White
-            }
-          } | Select-Object -First 50
-        
-    - name: 编译 GameServer (Debug Win32)
+        $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
+        if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
+        echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
+
+    - name: 编译 Win32 Debug
       shell: pwsh
       run: |
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "开始编译 GameServer (Debug Win32)" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host ""
-        
-        # 查找 MSBuild
-        $msbuild = Get-Command msbuild -ErrorAction SilentlyContinue
-        if (-not $msbuild) {
-          # 如果不在 PATH 中，尝试查找
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (Test-Path $vswhere) {
-            $msbuildPath = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
-            if ($msbuildPath -and (Test-Path $msbuildPath)) {
-              $msbuild = $msbuildPath
-            }
-          }
-          
-          if (-not $msbuild) {
-            $msbuild = "msbuild"
-          }
-        } else {
-          $msbuild = $msbuild.Source
-        }
-        
-        Write-Host "使用 MSBuild: $msbuild" -ForegroundColor Green
-        Write-Host "工作目录: $(Get-Location)" -ForegroundColor Green
-        Write-Host ""
-        
-        # 查找解决方案文件
-        Write-Host "=== 正在查找解决方案文件 ===" -ForegroundColor Cyan
-        
-        # 首先尝试递归搜索（最可靠的方法）
-        Write-Host "正在递归搜索 CoreGameServer.sln..." -ForegroundColor Yellow
-        $found = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) {
-          # 获取相对路径
-          $currentPath = (Get-Location).Path
-          $fullPath = $found.FullName
-          if ($fullPath.StartsWith($currentPath)) {
-            $solutionPath = $fullPath.Substring($currentPath.Length + 1)
-          } else {
-            $solutionPath = $fullPath
-          }
-          Write-Host "✓ 找到解决方案文件（递归搜索）: $solutionPath" -ForegroundColor Green
-          Write-Host "  完整路径: $fullPath" -ForegroundColor Gray
-        } else {
-          Write-Host "递归搜索未找到，尝试直接路径..." -ForegroundColor Yellow
-          
-          # 尝试多个可能的路径
-          $possiblePaths = @(
-            "Core\GameServer\CoreGameServer.sln",
-            "package\Core\GameServer\CoreGameServer.sln",
-            ".\Core\GameServer\CoreGameServer.sln",
-            ".\package\Core\GameServer\CoreGameServer.sln"
-          )
-          
-          foreach ($path in $possiblePaths) {
-            Write-Host "检查路径: $path" -ForegroundColor Yellow
-            if (Test-Path $path) {
-              $solutionPath = $path
-              Write-Host "✓ 找到解决方案文件: $solutionPath" -ForegroundColor Green
-              break
-            } else {
-              Write-Host "  ✗ 不存在" -ForegroundColor Gray
-            }
-          }
-        }
-        
-        # 最终检查
-        if (-not $solutionPath) {
-          Write-Host ""
-          Write-Host "========================================" -ForegroundColor Red
-          Write-Host "✗ 错误：未找到解决方案文件！" -ForegroundColor Red
-          Write-Host "========================================" -ForegroundColor Red
-          Write-Host ""
-          Write-Host "当前目录: $(Get-Location)" -ForegroundColor Yellow
-          Write-Host "当前目录完整路径: $((Get-Location).Path)" -ForegroundColor Yellow
-          Write-Host ""
-          Write-Host "根目录内容:" -ForegroundColor Cyan
-          Get-ChildItem | Select-Object Name, PSIsContainer | Format-Table -AutoSize
-          Write-Host ""
-          Write-Host "所有找到的 .sln 文件:" -ForegroundColor Cyan
-          $allSln = Get-ChildItem -Recurse -Filter "*.sln" -ErrorAction SilentlyContinue
-          if ($allSln) {
-            $allSln | ForEach-Object { 
-              $relPath = $_.FullName.Replace((Get-Location).Path + "\", "")
-              Write-Host "  $relPath" -ForegroundColor White
-            }
-          } else {
-            Write-Host "  未找到任何 .sln 文件！" -ForegroundColor Red
-            Write-Host ""
-            Write-Host "这可能意味着：" -ForegroundColor Yellow
-            Write-Host "1. 文件未推送到 GitHub" -ForegroundColor White
-            Write-Host "2. 文件被 .gitignore 排除" -ForegroundColor White
-            Write-Host "3. 仓库结构不同" -ForegroundColor White
-          }
-          Write-Host ""
-          Write-Host "请检查 GitHub 仓库中的实际文件结构" -ForegroundColor Yellow
-          exit 1
-        }
-        
-        # 验证文件确实存在
-        if (-not (Test-Path $solutionPath)) {
-          Write-Host ""
-          Write-Host "✗ 警告：路径存在但文件无法访问: $solutionPath" -ForegroundColor Red
-          Write-Host "尝试使用完整路径..." -ForegroundColor Yellow
-          $fullPath = (Resolve-Path $solutionPath -ErrorAction SilentlyContinue).Path
-          if ($fullPath) {
-            $solutionPath = $fullPath
-            Write-Host "✓ 使用完整路径: $solutionPath" -ForegroundColor Green
-          } else {
-            Write-Host "✗ 无法解析路径" -ForegroundColor Red
-            exit 1
-          }
-        }
-        
-        Write-Host "" 
-        Write-Host "=== 开始编译 ===" -ForegroundColor Green
-        Write-Host "解决方案文件: $solutionPath" -ForegroundColor Green
-        Write-Host ""
-        Write-Host "⚠ 重要：强制使用 VS2022 工具集 (v143)" -ForegroundColor Yellow
-        Write-Host "   原因：GitHub Actions 只提供 Visual Studio 2022" -ForegroundColor Yellow
-        Write-Host "   这将覆盖项目文件中的旧工具集设置" -ForegroundColor Yellow
-        Write-Host ""
-        
-        # 验证环境变量
-        Write-Host "=== 验证 Windows SDK 环境变量 ===" -ForegroundColor Cyan
-        $sdkVersion = $env:WINDOWS_SDK_VERSION
-        $targetPlatformVersion = $env:WindowsTargetPlatformVersion
-        $sdkVersionEnv = $env:WindowsSDKVersion
-        
-        Write-Host "WINDOWS_SDK_VERSION: $sdkVersion" -ForegroundColor $(if ($sdkVersion) { "Green" } else { "Yellow" })
-        Write-Host "WindowsTargetPlatformVersion: $targetPlatformVersion" -ForegroundColor $(if ($targetPlatformVersion) { "Green" } else { "Yellow" })
-        Write-Host "WindowsSDKVersion: $sdkVersionEnv" -ForegroundColor $(if ($sdkVersionEnv) { "Green" } else { "Yellow" })
-        Write-Host ""
-        
-        # 确定要使用的 SDK 版本（优先使用环境变量，否则使用 10.0）
-        if (-not $sdkVersion) {
-          if ($targetPlatformVersion) {
-            $sdkVersion = $targetPlatformVersion
-            Write-Host "使用 WindowsTargetPlatformVersion 环境变量: $sdkVersion" -ForegroundColor Yellow
-          } elseif ($sdkVersionEnv) {
-            $sdkVersion = $sdkVersionEnv
-            Write-Host "使用 WindowsSDKVersion 环境变量: $sdkVersion" -ForegroundColor Yellow
-          } else {
-            $sdkVersion = "10.0"
-            Write-Host "⚠ 未找到任何 SDK 版本环境变量，使用默认值 10.0" -ForegroundColor Yellow
-          }
-        }
-        
-        Write-Host ""
-        Write-Host "最终使用的 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
-        if ($sdkVersion -eq "10.0") {
-          Write-Host "  （MSBuild 将自动选择已安装的最新兼容版本）" -ForegroundColor Gray
-        }
-        Write-Host ""
-        
-        # 确保环境变量在当前步骤中可用（如果之前步骤设置的变量未传递）
-        if ($sdkVersion) {
-          $env:WindowsTargetPlatformVersion = $sdkVersion
-          $env:WindowsSDKVersion = $sdkVersion
-          Write-Host "已在当前步骤中设置环境变量:" -ForegroundColor Green
-          Write-Host "  WindowsTargetPlatformVersion=$sdkVersion" -ForegroundColor Gray
-          Write-Host "  WindowsSDKVersion=$sdkVersion" -ForegroundColor Gray
-          Write-Host ""
-        }
-        
-        # Build with error handling
-        # 使用多种方法覆盖 Windows SDK 版本：
-        # 1. MSBuild 参数 /p:WindowsTargetPlatformVersion
-        # 2. MSBuild 参数 /p:WindowsSDKVersion（如果支持）
-        # 3. 环境变量 WindowsTargetPlatformVersion 和 WindowsSDKVersion
-        # 4. /p:UseEnv=true 确保 MSBuild 使用环境变量
-        $buildArgs = @(
-          $solutionPath,
-          "/p:Configuration=Debug",
-          "/p:Platform=Win32",
-          "/p:PlatformToolset=v143",
-          "/p:WindowsTargetPlatformVersion=$sdkVersion",
-          "/p:WindowsSDKVersion=$sdkVersion",
-          "/p:UseEnv=true",
-          "/m",
-          "/v:minimal",
-          "/nologo",
-          "/fl",
-          "/flp:logfile=build.log;verbosity=detailed"
-        )
-        
-        Write-Host "编译参数:" -ForegroundColor Cyan
-        $buildArgs | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
-        Write-Host ""
-        
-        & $msbuild $buildArgs
-        
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host ""
-          Write-Host "========================================" -ForegroundColor Red
-          Write-Host "✗ 编译失败！" -ForegroundColor Red
-          Write-Host "========================================" -ForegroundColor Red
-          Write-Host ""
-          if (Test-Path "build.log") {
-            Write-Host "构建日志最后 100 行:" -ForegroundColor Yellow
-            Get-Content "build.log" -Tail 100
-          } else {
-            Write-Host "未找到 build.log 文件" -ForegroundColor Yellow
-          }
-          exit $LASTEXITCODE
-        }
-        
-        Write-Host ""
-        Write-Host "========================================" -ForegroundColor Green
-        Write-Host "✓ 编译成功完成！" -ForegroundColor Green
-        Write-Host "========================================" -ForegroundColor Green
-          
-    - name: 编译 GameServer (Full Debug Win32)
-      continue-on-error: true
-      shell: pwsh
-      run: |
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "开始编译 GameServer (Full Debug Win32)" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host ""
-        
-        # 查找 MSBuild
-        $msbuild = Get-Command msbuild -ErrorAction SilentlyContinue
-        if ($msbuild) {
-          $msbuild = $msbuild.Source
-        } else {
-          $msbuild = "msbuild"
-        }
-        
-        Write-Host "正在查找解决方案文件..." -ForegroundColor Yellow
-        
-        # 查找解决方案路径（与 Debug 构建相同的逻辑）
-        $possiblePaths = @(
-          "Core\GameServer\CoreGameServer.sln",
-          "package\Core\GameServer\CoreGameServer.sln"
-        )
-        
-        $solutionPath = $null
-        foreach ($path in $possiblePaths) {
-          if (Test-Path $path) {
-            $solutionPath = $path
-            Write-Host "✓ 找到解决方案: $solutionPath" -ForegroundColor Green
-            break
-          }
-        }
-        
-        if (-not $solutionPath) {
-          $found = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($found) {
-            $solutionPath = $found.FullName
-            Write-Host "✓ 找到解决方案: $solutionPath" -ForegroundColor Green
-          }
-        }
-        
-        if (-not $solutionPath) {
-          Write-Host "未找到解决方案文件，跳过 Full Debug 构建" -ForegroundColor Yellow
-          exit 0
-        }
-        
-        # 验证并获取 Windows SDK 版本（与 Debug 构建相同的逻辑）
-        Write-Host "=== 验证 Windows SDK 环境变量 ===" -ForegroundColor Cyan
-        $sdkVersion = $env:WINDOWS_SDK_VERSION
-        $targetPlatformVersion = $env:WindowsTargetPlatformVersion
-        $sdkVersionEnv = $env:WindowsSDKVersion
-        
-        if (-not $sdkVersion) {
-          if ($targetPlatformVersion) {
-            $sdkVersion = $targetPlatformVersion
-          } elseif ($sdkVersionEnv) {
-            $sdkVersion = $sdkVersionEnv
-          } else {
-            $sdkVersion = "10.0"
-            Write-Host "⚠ 未找到任何 SDK 版本环境变量，使用默认值 10.0" -ForegroundColor Yellow
-          }
-        }
-        
-        Write-Host "使用 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
-        Write-Host ""
-        
-        # 确保环境变量在当前步骤中可用
-        if ($sdkVersion) {
-          $env:WindowsTargetPlatformVersion = $sdkVersion
-          $env:WindowsSDKVersion = $sdkVersion
-        }
-        
-        Write-Host "开始编译 Full Debug 配置..." -ForegroundColor Green
-        & $msbuild `
-          $solutionPath `
-          /p:Configuration="Full Debug" `
+        msbuild `
+          "${{ steps.sln.outputs.file }}" `
+          /t:Rebuild `
+          /p:Configuration=Debug `
           /p:Platform=Win32 `
           /p:PlatformToolset=v143 `
-          /p:WindowsTargetPlatformVersion=$sdkVersion `
-          /p:WindowsSDKVersion=$sdkVersion `
-          /p:UseEnv=true `
-          /m `
-          /v:minimal `
-          /nologo
-        
-        if ($LASTEXITCODE -eq 0) {
-          Write-Host "✓ Full Debug 编译成功" -ForegroundColor Green
-        } else {
-          Write-Host "✗ Full Debug 编译失败（允许继续）" -ForegroundColor Yellow
-        }
-          
+          /m
+
     - name: 上传构建产物
-      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: GameServer-Debug-Win32
+        name: GameServer-Debug
         path: |
-          **/Core/GameServer/Debug/GameServer.exe
-          **/Core/GameServer/Full Debug/GameServerFD.exe
-          **/Core/GameServer/**/GameServer*.exe
-        retention-days: 7
-        if-no-files-found: warn
-        
-    - name: 列出构建输出
-      if: always()
-      shell: pwsh
-      run: |
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "查找构建输出文件" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host ""
-        Write-Host "当前目录: $(Get-Location)" -ForegroundColor Yellow
-        Write-Host ""
-        
-        # 在当前目录和 package 子目录中搜索
-        $searchPaths = @(".", "package")
-        $foundAny = $false
-        
-        foreach ($searchPath in $searchPaths) {
-          if (Test-Path $searchPath) {
-            Write-Host "正在搜索: $searchPath" -ForegroundColor Yellow
-            $exes = Get-ChildItem -Path $searchPath -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
-            if ($exes) {
-              $foundAny = $true
-              Write-Host "找到 .exe 文件:" -ForegroundColor Green
-              $exes | ForEach-Object {
-                Write-Host "  $($_.FullName)" -ForegroundColor White
-              }
-            } else {
-              Write-Host "  未找到 .exe 文件" -ForegroundColor Gray
-            }
-            
-            $libs = Get-ChildItem -Path $searchPath -Recurse -Filter "*.lib" -ErrorAction SilentlyContinue | Select-Object -First 10
-            if ($libs) {
-              Write-Host "找到 .lib 文件（前 10 个）:" -ForegroundColor Green
-              $libs | ForEach-Object {
-                Write-Host "  $($_.FullName)" -ForegroundColor White
-              }
-            }
-            Write-Host ""
-          }
-        }
-        
-        if (-not $foundAny) {
-          Write-Host "⚠ 未找到任何构建输出文件" -ForegroundColor Yellow
-          Write-Host "可能原因：" -ForegroundColor Yellow
-          Write-Host "1. 编译失败" -ForegroundColor White
-          Write-Host "2. 输出文件在其他位置" -ForegroundColor White
-          Write-Host "3. 输出文件被 .gitignore 排除" -ForegroundColor White
-        }
+          **/Debug/*.exe
+          **/Debug/*.dll
