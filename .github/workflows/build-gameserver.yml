@@ -31,13 +31,9 @@ jobs:
           # 删除 PreBuildEvent
           $xml = $xml -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>', ''
 
-          # 注入禁用 CodeAnalysis 的配置（here-string 必须连续）
+          # 注入 DisableCodeAnalysis（用单行字符串，避免 here-string）
           if ($xml -notmatch 'DisableCodeAnalysis') {
-            $insert = @"
-  <DisableCodeAnalysis>true</DisableCodeAnalysis>
-  <EnablePREfast>false</EnablePREfast>
-"@
-            $xml = $xml -replace '</PropertyGroup>', "$insert</PropertyGroup>"
+            $xml = $xml -replace '</PropertyGroup>', '  <DisableCodeAnalysis>true</DisableCodeAnalysis>`n  <EnablePREfast>false</EnablePREfast>`n</PropertyGroup>'
           }
 
           if ($xml -ne $orig) {
