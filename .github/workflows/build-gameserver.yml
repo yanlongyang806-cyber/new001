@@ -99,9 +99,18 @@ jobs:
         Write-Host "将使用 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
         Write-Host ""
         
-        # 将版本存储到环境变量
+        # 将版本存储到多个环境变量，确保 MSBuild 能够识别
+        # WindowsTargetPlatformVersion - MSBuild 属性
+        # WindowsSDKVersion - 某些情况下 MSBuild 也会检查这个环境变量
         echo "WINDOWS_SDK_VERSION=$sdkVersion" >> $env:GITHUB_ENV
-        Write-Host "已设置环境变量 WINDOWS_SDK_VERSION=$sdkVersion" -ForegroundColor Green
+        echo "WindowsTargetPlatformVersion=$sdkVersion" >> $env:GITHUB_ENV
+        echo "WindowsSDKVersion=$sdkVersion" >> $env:GITHUB_ENV
+        
+        Write-Host "已设置以下环境变量:" -ForegroundColor Green
+        Write-Host "  WINDOWS_SDK_VERSION=$sdkVersion" -ForegroundColor Gray
+        Write-Host "  WindowsTargetPlatformVersion=$sdkVersion" -ForegroundColor Gray
+        Write-Host "  WindowsSDKVersion=$sdkVersion" -ForegroundColor Gray
+        Write-Host ""
       
     - name: 调试 - 显示目录结构
       shell: pwsh
@@ -296,25 +305,58 @@ jobs:
         Write-Host "   这将覆盖项目文件中的旧工具集设置" -ForegroundColor Yellow
         Write-Host ""
         
-        # 获取检测到的 Windows SDK 版本
+        # 验证环境变量
+        Write-Host "=== 验证 Windows SDK 环境变量 ===" -ForegroundColor Cyan
         $sdkVersion = $env:WINDOWS_SDK_VERSION
-        if (-not $sdkVersion) {
-          Write-Host "⚠ 未找到 WINDOWS_SDK_VERSION 环境变量，使用默认值 10.0" -ForegroundColor Yellow
-          $sdkVersion = "10.0"
-        }
-        Write-Host "使用 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
+        $targetPlatformVersion = $env:WindowsTargetPlatformVersion
+        $sdkVersionEnv = $env:WindowsSDKVersion
+        
+        Write-Host "WINDOWS_SDK_VERSION: $sdkVersion" -ForegroundColor $(if ($sdkVersion) { "Green" } else { "Yellow" })
+        Write-Host "WindowsTargetPlatformVersion: $targetPlatformVersion" -ForegroundColor $(if ($targetPlatformVersion) { "Green" } else { "Yellow" })
+        Write-Host "WindowsSDKVersion: $sdkVersionEnv" -ForegroundColor $(if ($sdkVersionEnv) { "Green" } else { "Yellow" })
         Write-Host ""
         
+        # 确定要使用的 SDK 版本
+        if (-not $sdkVersion) {
+          if ($targetPlatformVersion) {
+            $sdkVersion = $targetPlatformVersion
+            Write-Host "使用 WindowsTargetPlatformVersion 环境变量: $sdkVersion" -ForegroundColor Yellow
+          } elseif ($sdkVersionEnv) {
+            $sdkVersion = $sdkVersionEnv
+            Write-Host "使用 WindowsSDKVersion 环境变量: $sdkVersion" -ForegroundColor Yellow
+          } else {
+            $sdkVersion = "10.0"
+            Write-Host "⚠ 未找到任何 SDK 版本环境变量，使用默认值 10.0" -ForegroundColor Yellow
+          }
+        }
+        
+        Write-Host ""
+        Write-Host "最终使用的 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
+        Write-Host ""
+        
+        # 确保环境变量在当前步骤中可用（如果之前步骤设置的变量未传递）
+        if ($sdkVersion) {
+          $env:WindowsTargetPlatformVersion = $sdkVersion
+          $env:WindowsSDKVersion = $sdkVersion
+          Write-Host "已在当前步骤中设置环境变量:" -ForegroundColor Green
+          Write-Host "  WindowsTargetPlatformVersion=$sdkVersion" -ForegroundColor Gray
+          Write-Host "  WindowsSDKVersion=$sdkVersion" -ForegroundColor Gray
+          Write-Host ""
+        }
+        
         # Build with error handling
-        # 强制使用 VS2022 工具集（v143），覆盖项目文件中的旧设置
-        # 使用检测到的 Windows SDK 版本覆盖项目文件中的硬编码版本
-        # 使用 /p 参数可以覆盖项目文件中的 PlatformToolset 和 WindowsTargetPlatformVersion 设置
+        # 使用多种方法覆盖 Windows SDK 版本：
+        # 1. MSBuild 参数 /p:WindowsTargetPlatformVersion
+        # 2. MSBuild 参数 /p:WindowsSDKVersion（如果支持）
+        # 3. 环境变量 WindowsTargetPlatformVersion 和 WindowsSDKVersion
+        # 4. /p:UseEnv=true 确保 MSBuild 使用环境变量
         $buildArgs = @(
           $solutionPath,
           "/p:Configuration=Debug",
           "/p:Platform=Win32",
           "/p:PlatformToolset=v143",
           "/p:WindowsTargetPlatformVersion=$sdkVersion",
+          "/p:WindowsSDKVersion=$sdkVersion",
           "/p:UseEnv=true",
           "/m",
           "/v:minimal",
@@ -396,14 +438,31 @@ jobs:
           exit 0
         }
         
-        # 获取检测到的 Windows SDK 版本
+        # 验证并获取 Windows SDK 版本（与 Debug 构建相同的逻辑）
+        Write-Host "=== 验证 Windows SDK 环境变量 ===" -ForegroundColor Cyan
         $sdkVersion = $env:WINDOWS_SDK_VERSION
+        $targetPlatformVersion = $env:WindowsTargetPlatformVersion
+        $sdkVersionEnv = $env:WindowsSDKVersion
+        
         if (-not $sdkVersion) {
-          Write-Host "⚠ 未找到 WINDOWS_SDK_VERSION 环境变量，使用默认值 10.0" -ForegroundColor Yellow
-          $sdkVersion = "10.0"
+          if ($targetPlatformVersion) {
+            $sdkVersion = $targetPlatformVersion
+          } elseif ($sdkVersionEnv) {
+            $sdkVersion = $sdkVersionEnv
+          } else {
+            $sdkVersion = "10.0"
+            Write-Host "⚠ 未找到任何 SDK 版本环境变量，使用默认值 10.0" -ForegroundColor Yellow
+          }
         }
+        
         Write-Host "使用 Windows SDK 版本: $sdkVersion" -ForegroundColor Green
         Write-Host ""
+        
+        # 确保环境变量在当前步骤中可用
+        if ($sdkVersion) {
+          $env:WindowsTargetPlatformVersion = $sdkVersion
+          $env:WindowsSDKVersion = $sdkVersion
+        }
         
         Write-Host "开始编译 Full Debug 配置..." -ForegroundColor Green
         & $msbuild `
@@ -412,6 +471,8 @@ jobs:
           /p:Platform=Win32 `
           /p:PlatformToolset=v143 `
           /p:WindowsTargetPlatformVersion=$sdkVersion `
+          /p:WindowsSDKVersion=$sdkVersion `
+          /p:UseEnv=true `
           /m `
           /v:minimal `
           /nologo
