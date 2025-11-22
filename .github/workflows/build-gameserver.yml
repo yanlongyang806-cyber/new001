@@ -130,6 +130,41 @@ jobs:
             Write-Host "Warning: $file not found"
           }
 
+      - name: Disable Code Analysis for C files
+        shell: powershell
+        run: |
+          Write-Host "=== Disabling Code Analysis for C files ==="
+          
+          $fixedCount = 0
+          
+          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+            $file = $_.FullName
+            $content = Get-Content $file -Raw -Encoding UTF8
+            $originalContent = $content
+            
+            # 在 ItemDefinitionGroup 的 ClCompile 中添加 _NO_CODE_ANALYSIS_ 预处理器定义
+            # 查找所有 ItemDefinitionGroup 中的 ClCompile
+            $pattern = '(<ItemDefinitionGroup[^>]*>[\s\S]*?<ClCompile>[\s\S]*?<PreprocessorDefinitions>)([^<]*)(</PreprocessorDefinitions>)'
+            
+            if ($content -match $pattern) {
+              # 检查是否已经包含 _NO_CODE_ANALYSIS_
+              if ($content -notmatch '_NO_CODE_ANALYSIS_') {
+                # 在 PreprocessorDefinitions 中添加 _NO_CODE_ANALYSIS_
+                $content = $content -replace '(<PreprocessorDefinitions>)([^<]*)(</PreprocessorDefinitions>)', '$1_NO_CODE_ANALYSIS_;$2$3'
+                $fixedCount++
+                Write-Host "Added _NO_CODE_ANALYSIS_ to: $file"
+              }
+            }
+            
+            # 如果内容被修改，保存文件
+            if ($content -ne $originalContent) {
+              Set-Content -Path $file -Value $content -NoNewline -Encoding UTF8
+            }
+          }
+          
+          Write-Host "=== Summary ==="
+          Write-Host "Files with _NO_CODE_ANALYSIS_ added: $fixedCount"
+
       - name: Copy StructParser Tools (DEBUG MODE)
         shell: powershell
         run: |
