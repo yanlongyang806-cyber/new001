@@ -112,9 +112,6 @@ jobs:
         
         Write-Host "使用 MSBuild: $msbuild" -ForegroundColor Green
         Write-Host "工作目录: $(Get-Location)" -ForegroundColor Green
-        if ($env:VCToolsVersion) {
-          Write-Host "工具集版本: $env:VCToolsVersion" -ForegroundColor Green
-        }
         Write-Host ""
         
         # 查找解决方案文件
