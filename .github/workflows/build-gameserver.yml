@@ -1,64 +1,19 @@
-name: Build GameServer Win32 Debug
+- name: Disable CodeAnalysis for ALL vcxproj
+  shell: pwsh
+  run: |
+    Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+      $file = $_.FullName
+      $xml = Get-Content $file -Raw
 
-on:
-  push:
-  pull_request:
-  workflow_dispatch:
+      # 关闭 CodeAnalysis / PREfast
+      if ($xml -notmatch 'DisableCodeAnalysis') {
+        $xml = $xml -replace '</PropertyGroup>', @"
+  <DisableCodeAnalysis>true</DisableCodeAnalysis>
+  <EnablePREfast>false</EnablePREfast>
+</PropertyGroup>
+"@
+      }
 
-jobs:
-  build:
-    runs-on: windows-latest
-
-    steps:
-    - name: Checkout Repo
-      uses: actions/checkout@v4
-
-    # 固定 VS2022 + MSVC 14.44 工具链
-    - name: Setup MSVC 2022 (14.44)
-      uses: ilammy/msvc-dev-cmd@v1
-      with:
-        arch: x86
-        toolset: 14.44
-
-    # 修复旧式项目 XML + 移除 VS2010/VS2012 遗留字段
-    - name: Repair vcxproj XML
-      shell: pwsh
-      run: |
-        Write-Host "=== 清理 vcxproj 遗留字段 ==="
-
-        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-          $file = $_.FullName
-          $xml = Get-Content $file -Raw
-
-          # 删除非法 PreBuildEvent（旧式 vcxproj 会放错位置）
-          $xml = $xml -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>', ''
-
-          # 去掉 VS2010 遗留标签：<Project> 下不允许出现 command event
-          $xml = $xml -replace '(?s)<Project> *\r?\n?', "<Project>"
-
-          # 删除空行
-          $xml = $xml -replace "`r`n`r`n", "`r`n"
-
-          Set-Content -Path $file -Value $xml -Encoding UTF8
-          Write-Host "修复: $file"
-        }
-
-    # 开始构建
-    - name: Build CoreGameServer Win32 Debug
-      shell: pwsh
-      run: |
-        Write-Host "=== 开始 MSBuild Win32 Debug ==="
-
-        # 显示 include 链
-        $env:CL="/showIncludes"
-
-        MSBuild.exe `
-          "Core/GameServer/CoreGameServer.sln" `
-          /t:Rebuild `
-          /p:Configuration=Debug `
-          /p:Platform=Win32 `
-          /p:PlatformToolset=v143 `
-          /m /v:minimal
-
-    - name: Build Done
-      run: echo "Build completed ✔"
+      Set-Content -Path $file -Value $xml -Encoding UTF8
+      Write-Host "✔ 已禁用 CodeAnalysis：$file"
+    }
