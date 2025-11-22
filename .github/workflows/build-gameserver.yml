@@ -282,14 +282,15 @@ jobs:
         Write-Host ""
         
         # Build with error handling
-        # 使用 ilammy/msvc-dev-cmd 已设置的环境，工具集会自动使用正确的版本
-        # 仍然显式指定以确保兼容性
+        # 强制使用 VS2022 工具集（v143），覆盖项目文件中的旧设置
+        # 使用 /p 参数可以覆盖项目文件中的 PlatformToolset 设置
         $buildArgs = @(
           $solutionPath,
           "/p:Configuration=Debug",
           "/p:Platform=Win32",
           "/p:PlatformToolset=v143",
           "/p:WindowsTargetPlatformVersion=10.0",
+          "/p:UseEnv=true",
           "/m",
           "/v:minimal",
           "/nologo",
