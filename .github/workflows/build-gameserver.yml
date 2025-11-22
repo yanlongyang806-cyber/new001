@@ -1,86 +1,13 @@
-name: Build GameServer
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: self-hosted
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    # 1) 复制 StructParser.exe 到工作目录（关键步骤！）
-    - name: Copy StructParser.exe
+    - name: Copy StructParser Tools
       shell: powershell
       run: |
-        Write-Host "Copying StructParser.exe ..."
-        Copy-Item "I:\wd112\package\Utilities\Bin\StructParser.exe" -Destination "${{ runner.temp }}\StructParser.exe"
-        Write-Host "Copied to $env:RUNNER_TEMP"
+        $src = "I:\gp5\Utilities\Bin"
+        $dst = "$env:RUNNER_TEMP"
 
-    # 2) 修复所有 vcxproj 的 PreBuildEvent，改成正确路径
-    - name: Patch PreBuildEvent
-      shell: powershell
-      run: |
-        Write-Host "=== 修复 PreBuildEvent 中的 StructParser 路径 ==="
-        $parser = "${{ runner.temp }}\StructParser.exe".Replace("\","\\")
-        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName
-            (Get-Content $file) `
-              -replace "\.\.\\\.\.\\utilities\\bin\\structparser", $parser `
-              | Set-Content $file
-            Write-Host "Patched: $file"
-        }
+        Write-Host "Copy tools from $src to $dst"
 
-    # 3) 修复所有项目 Windows SDK 至 10.0.19041.0
-    - name: Fix Windows SDK
-      shell: powershell
-      run: |
-        $sdk = "10.0.19041.0"
-        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName
-            $content = Get-Content $file -Raw
-            $xml = [xml]$content
-            foreach ($pg in $xml.Project.PropertyGroup) {
-                foreach ($n in $pg.ChildNodes) {
-                    if ($n.Name -eq "WindowsTargetPlatformVersion") {
-                        $n.InnerText = $sdk
-                    }
-                }
-            }
-            $xml.Save($file)
-            Write-Host "Updated SDK in $file"
-        }
+        Copy-Item "$src\StructParser.exe" -Destination $dst -Force
+        Copy-Item "$src\ProjectManager.exe" -Destination $dst -Force
+        Copy-Item "$src\structparser_settings.txt" -Destination $dst -Force
 
-    - name: Find SLN
-      id: sln
-      shell: powershell
-      run: |
-        $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-        echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
-
-    # 4) 编译
-    - name: Build Debug Win32
-      shell: cmd
-      run: |
-        call "I:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x86
-        "I:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" ^
-          "${{ steps.sln.outputs.file }}" ^
-          /t:Rebuild ^
-          /p:Configuration=Debug ^
-          /p:Platform=Win32 ^
-          /p:PlatformToolset=v143 ^
-          /m
-
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: GameServer-Debug
-        path: |
-          **/Debug/*.exe
-          **/Debug/*.dll
+        Write-Host "Copied StructParser + ProjectManager OK"
