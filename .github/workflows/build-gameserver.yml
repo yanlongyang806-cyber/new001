@@ -2,7 +2,9 @@ name: Build GameServer Win32 Debug
 
 on:
   push:
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -28,10 +30,10 @@ jobs:
           $xml = Get-Content $file -Raw
           $orig = $xml
 
-          # 删除旧版 VS 残留的 PreBuildEvent
+          # 删除旧版 PreBuildEvent
           $xml = $xml -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>', ''
 
-          # 关闭 CodeAnalysis / PREfast
+          # 禁用 CodeAnalysis
           if ($xml -notmatch 'DisableCodeAnalysis') {
             $xml = $xml -replace '</PropertyGroup>', @"
   <DisableCodeAnalysis>true</DisableCodeAnalysis>
@@ -41,7 +43,7 @@ jobs:
           }
 
           if ($xml -ne $orig) {
-            Set-Content -Path $file -Value $xml -Encoding UTF8 -NoNewline
+            Set-Content -Path $file -Value $xml -Encoding UTF8 -NoNewLine
             Write-Host "✔ 修复: $file"
           }
         }
@@ -51,7 +53,7 @@ jobs:
       run: |
         $env:CL="/showIncludes"
 
-        MSBuild.exe `
+        & "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe" `
           "Core/GameServer/CoreGameServer.sln" `
           /t:Rebuild `
           /p:Configuration=Debug `
