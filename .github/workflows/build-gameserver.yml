@@ -1,6 +1,10 @@
 name: Build GameServer
 
 on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -8,47 +12,74 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: 修复 Windows SDK
-        shell: powershell
-        run: |
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          Write-Host "=== 修复 Windows SDK 版本 ==="
-          $sdk = "10.0.19041.0"
+    # ------------------------------
+    # 解除执行策略（适配 NETWORK SERVICE）
+    # ------------------------------
+    - name: 强制解除执行策略
+      shell: powershell
+      run: |
+        powershell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope Process -Force"
+        powershell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope CurrentUser -Force"
+        Write-Host "ExecutionPolicy 已解除"
+
+    # ------------------------------
+    # 修复 SDK
+    # ------------------------------
+    - name: 修复所有项目 SDK（10.0.19041.0）
+      shell: powershell
+      run: |
+        powershell -ExecutionPolicy Bypass -Command "
+          Write-Host '=== 修复 Windows SDK 版本 ==='
+          \$sdk = '10.0.19041.0'
           Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName
-            (Get-Content $file) `
-              -replace "<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>",
-                       "<WindowsTargetPlatformVersion>$sdk</WindowsTargetPlatformVersion>" `
-              | Set-Content $file
-            Write-Host "修复: $file"
+            \$file = \$_.FullName
+            (Get-Content \$file) `
+              -replace '<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>',
+                       \"<WindowsTargetPlatformVersion>\$sdk</WindowsTargetPlatformVersion>\" `
+              | Set-Content \$file
+            Write-Host '修复: ' \$file
           }
+        "
 
-      - name: 查找 SLN
-        id: sln
-        shell: powershell
-        run: |
-          $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-          if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
-          echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
+    # ------------------------------
+    # 查找 sln
+    # ------------------------------
+    - name: 查找 SLN
+      id: sln
+      shell: powershell
+      run: |
+        powershell -ExecutionPolicy Bypass -Command "
+          \$sln = Get-ChildItem -Recurse -Filter 'CoreGameServer.sln' | Select-Object -First 1
+          if (-not \$sln) { Write-Error '未找到 CoreGameServer.sln'; exit 1 }
+          echo \"file=\$([string]\$sln.FullName)\" >> \$env:GITHUB_OUTPUT
+        "
 
-      - name: 编译 Win32 Debug
-        shell: powershell
-        run: |
+    # ------------------------------
+    # 编译 Debug Win32
+    # ------------------------------
+    - name: 编译 Win32 Debug
+      shell: powershell
+      run: |
+        powershell -ExecutionPolicy Bypass -Command "
           msbuild `
-            "${{ steps.sln.outputs.file }}" `
+            '${{ steps.sln.outputs.file }}' `
             /t:Rebuild `
             /p:Configuration=Debug `
             /p:Platform=Win32 `
             /p:PlatformToolset=v143 `
             /m
+        "
 
-      - name: 上传构建产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: GameServer-Debug
-          path: |
-            **/Debug/*.exe
-            **/Debug/*.dll
+    # ------------------------------
+    # 上传构建产物
+    # ------------------------------
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: GameServer-Debug
+        path: |
+          **/Debug/*.exe
+          **/Debug/*.dll
