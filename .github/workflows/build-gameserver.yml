@@ -9,16 +9,23 @@ on:
 
 jobs:
   build:
-    runs-on: self-hosted  # 你的本地 Runner
+    runs-on: self-hosted
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 修复所有项目 SDK（强制设置为 10.0.19041.0）
-      shell: powershell
+    # 解决 Runner 服务账号执行策略问题（关键补丁）
+    - name: 强制解除执行策略（适配 NETWORK SERVICE）
+      shell: cmd
       run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
+        powershell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope Process -Force"
+        powershell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope CurrentUser -Force"
+        powershell -ExecutionPolicy Bypass -Command "Write-Host 'ExecutionPolicy 已解除'"
+
+    - name: 修复所有项目 SDK（10.0.19041.0）
+      shell: powershell -ExecutionPolicy Bypass
+      run: |
         Write-Host "=== 修复 Windows SDK 版本 ==="
         $sdk = "10.0.19041.0"
         Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
@@ -32,17 +39,15 @@ jobs:
 
     - name: 查找 SLN
       id: sln
-      shell: powershell
+      shell: powershell -ExecutionPolicy Bypass
       run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
         $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
         if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
         echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
 
     - name: 编译 Win32 Debug
-      shell: powershell
+      shell: powershell -ExecutionPolicy Bypass
       run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
         msbuild `
           "${{ steps.sln.outputs.file }}" `
           /t:Rebuild `
