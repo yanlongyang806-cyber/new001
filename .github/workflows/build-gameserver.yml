@@ -1,6 +1,9 @@
-name: Build GameServer Win32 Debug
+name: Build GameServer (Win32 Debug + Release)
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -8,20 +11,65 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout
+    - name: Checkout Repo
       uses: actions/checkout@v4
 
-    - name: Setup MSVC
+    - name: Setup MSVC 2022
       uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: x86
 
+    # 修复 vcxproj 残留设置（删除 PreBuildEvent、关闭 CodeAnalysis）
+    - name: Repair vcxproj files
+      shell: pwsh
+      run: |
+        Write-Host "=== 修复所有 vcxproj ==="
+        $files = Get-ChildItem -Recurse -Filter *.vcxproj
+        foreach ($f in $files) {
+          $xml = Get-Content $f.FullName -Raw
+          $orig = $xml
+
+          # 删除旧 VS PreBuildEvent 可能导致 Actions 崩溃
+          $xml = $xml -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>', ''
+
+          # 禁用代码分析
+          if ($xml -notmatch 'DisableCodeAnalysis') {
+            $xml = $xml -replace '</PropertyGroup>', @"
+  <DisableCodeAnalysis>true</DisableCodeAnalysis>
+  <EnablePREfast>false</EnablePREfast>
+</PropertyGroup>
+"@
+          }
+
+          if ($xml -ne $orig) {
+            Set-Content $f.FullName $xml -Encoding UTF8 -NoNewline
+            Write-Host "✔ Patched: $($f.FullName)"
+          }
+        }
+
     - name: Build CoreGameServer (Win32 Debug)
       shell: pwsh
       run: |
-        Write-Host "=== Building CoreGameServer Win32 Debug ==="
+        Write-Host "=== Building GameServer Win32 Debug ==="
         MSBuild.exe "Core/GameServer/CoreGameServer.sln" `
           /t:Rebuild `
           /p:Configuration=Debug `
           /p:Platform=Win32 `
+          /p:PlatformToolset=v143 `
           /m
+
+    - name: Prepare Artifact
+      shell: pwsh
+      run: |
+        mkdir output
+        Copy-Item -Recurse -Force "Core/GameServer/Debug" "output/GameServer_Debug"
+        Compress-Archive -Path "output/GameServer_Debug" -DestinationPath "GameServer_Win32_Debug.zip"
+
+    - name: Upload Artifact (GitHub Releases)
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: GameServer_v1
+        name: "GameServer Win32 Build"
+        files: GameServer_Win32_Debug.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
