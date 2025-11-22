@@ -15,10 +15,10 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 初始化 VS2022（v143 工具集）
+    - name: 初始化 VS 工具链 (v142)
       uses: ilammy/msvc-dev-cmd@v1
       with:
-        toolset: 143
+        toolset: 142
 
     - name: 自动修复所有项目的 Windows SDK 版本
       shell: pwsh
@@ -50,7 +50,7 @@ jobs:
           /t:Rebuild `
           /p:Configuration=Debug `
           /p:Platform=Win32 `
-          /p:PlatformToolset=v143 `
+          /p:PlatformToolset=v142 `
           /m
 
     - name: 上传构建产物
