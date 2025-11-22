@@ -1,0 +1,4 @@
+actions-runner/
+actions-runner_work/
+*.cmd.template
+*.sh.template
