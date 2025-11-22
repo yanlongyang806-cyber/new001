@@ -1,82 +1,14 @@
-name: Build GameServer
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: self-hosted
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Set Execution Policy
-      shell: powershell
-      run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        Set-ExecutionPolicy Bypass -Scope CurrentUser -Force
-        Write-Host "ExecutionPolicy OK"
-
-    - name: Fix Windows SDK
-      shell: powershell
-      run: |
-        $sdk = "10.0.19041.0"
-        Write-Host "Fixing SDK version to $sdk"
-
-        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName
-            Write-Host "Processing $file"
-
-            $content = Get-Content $file -Raw
-            $xml = [xml]$content
-
-            $updated = $false
-
-            foreach ($pg in $xml.Project.PropertyGroup) {
-                foreach ($node in $pg.ChildNodes) {
-                    if ($node.Name -eq "WindowsTargetPlatformVersion") {
-                        $node.InnerText = $sdk
-                        $updated = $true
-                    }
-                }
-            }
-
-            if ($updated) {
-                $xml.Save($file)
-                Write-Host "Updated SDK in: $file"
-            } else {
-                Write-Host "No SDK tag in: $file (skip)"
-            }
-        }
-
-    - name: Find SLN
-      id: sln
-      shell: powershell
-      run: |
-        $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-        if (-not $sln) { Write-Error "CoreGameServer.sln not found"; exit 1 }
-        echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
-
     - name: Build Debug Win32
-      shell: powershell
+      shell: cmd
       run: |
-        msbuild `
-          "${{ steps.sln.outputs.file }}" `
-          /t:Rebuild `
-          /p:Configuration=Debug `
-          /p:Platform=Win32 `
-          /p:PlatformToolset=v143 `
-          /m
+        echo ==== Load Visual Studio Build Environment ====
+        call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86
 
-    - name: Upload Build Output
-      uses: actions/upload-artifact@v4
-      with:
-        name: GameServer-Debug
-        path: |
-          **/Debug/*.exe
-          **/Debug/*.dll
+        echo ==== MSBuild Start ====
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe" ^
+          "${{ steps.sln.outputs.file }}" ^
+          /t:Rebuild ^
+          /p:Configuration=Debug ^
+          /p:Platform=Win32 ^
+          /p:PlatformToolset=v143 ^
+          /m
