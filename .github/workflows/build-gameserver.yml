@@ -1,52 +1,13 @@
-name: Build GameServer
-
-on:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: windows-2022   # ← 必须改成这个！
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: 初始化 VS2022 + v143 工具链
-      uses: ilammy/msvc-dev-cmd@v1
-      with:
-        toolset: 143    # ← 不要带 v
-
-    - name: 调试环境
-      shell: pwsh
-      run: |
-        Write-Host "VCToolsVersion = $env:VCToolsVersion"
-        Write-Host "VCINSTALLDIR   = $env:VCINSTALLDIR"
-        cl.exe
-        msbuild -version
-
-    - name: 查找解决方案
-      id: sln
-      shell: pwsh
-      run: |
-        $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-        if (-not $sln) { exit 1 }
-        echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
-
-    - name: 编译 Win32 Debug
-      shell: pwsh
-      run: |
-        msbuild `
-          "${{ steps.sln.outputs.file }}" `
-          /t:Rebuild `
-          /p:Configuration=Debug `
-          /p:Platform=Win32 `
-          /p:PlatformToolset=v143 `
-          /m
-
-    - name: 上传产物
-      uses: actions/upload-artifact@v4
-      with:
-        name: GameServer-Debug
-        path: |
-          **/Debug/*.exe
-          **/Debug/*.dll
+Run ilammy/msvc-dev-cmd@v1
+Found with vswhere: C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat
+Error: Could not setup Developer Command Prompt: invalid parameters
+[ERROR:vcvars.bat] Toolset directory for version 'v143' was not found.
+[ERROR:VsDevCmd.bat] *** VsDevCmd.bat encountered errors. Environment may be incomplete and/or incorrect. ***
+[ERROR:VsDevCmd.bat] In an uninitialized command prompt, please 'set VSCMD_DEBUG=[value]' and then re-run
+[ERROR:VsDevCmd.bat] vsdevcmd.bat [args] for additional details.
+[ERROR:VsDevCmd.bat] Where [value] is:
+[ERROR:VsDevCmd.bat]    1 : basic debug logging
+[ERROR:VsDevCmd.bat]    2 : detailed debug logging
+[ERROR:VsDevCmd.bat]    3 : trace level logging. Redirection of output to a file when using this level is recommended.
+[ERROR:VsDevCmd.bat] Example: set VSCMD_DEBUG=3
+[ERROR:VsDevCmd.bat]          vsdevcmd.bat > vsdevcmd.trace.txt 2>&1
