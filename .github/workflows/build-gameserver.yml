@@ -1,26 +1,7 @@
-name: Build GameServer
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on:
-      - self-hosted
-      - Windows
-      - X64
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
     - name: 修复所有项目 SDK（强制设置为 10.0.19041.0）
       shell: powershell
       run: |
+        Set-ExecutionPolicy Bypass -Scope Process -Force
         Write-Host "=== 自动修复 Windows SDK 版本 ==="
         $sdk = "10.0.19041.0"
         Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
@@ -31,30 +12,3 @@ jobs:
             | Set-Content $file
           Write-Host "修复: $file"
         }
-
-    - name: 查找 sln
-      id: sln
-      shell: powershell
-      run: |
-        $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-        if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
-        echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
-
-    - name: 编译 Win32 Debug
-      shell: powershell
-      run: |
-        msbuild `
-          "${{ steps.sln.outputs.file }}" `
-          /t:Rebuild `
-          /p:Configuration=Debug `
-          /p:Platform=Win32 `
-          /p:PlatformToolset=v143 `
-          /m
-
-    - name: 上传产物
-      uses: actions/upload-artifact@v4
-      with:
-        name: GameServer-Debug
-        path: |
-          **/Debug/*.exe
-          **/Debug/*.dll
