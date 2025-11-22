@@ -1,49 +1,91 @@
-    - name: Copy StructParser Tools (DEBUG MODE)
-      shell: powershell
-      run: |
-        $src = "I:\gp5\Utilities\Bin"
-        $dst = "$env:RUNNER_TEMP"
+name: Build GameServer
 
-        Write-Host "==== DEBUG: Copy StructParser Tools ===="
-        Write-Host "Source Path: $src"
-        Write-Host "Destination Path: $dst"
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
 
-        if (-Not (Test-Path $src)) {
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fix Windows SDK
+        shell: powershell
+        run: |
+          $sdk = "10.0.19041.0"
+          Write-Host "Fixing SDK version to $sdk"
+
+          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+            $file = $_.FullName
+            $xml = [xml](Get-Content $file -Raw)
+
+            $updated = $false
+            foreach ($pg in $xml.Project.PropertyGroup) {
+              foreach ($n in $pg.ChildNodes) {
+                if ($n.Name -eq "WindowsTargetPlatformVersion") {
+                  $n.InnerText = $sdk
+                  $updated = $true
+                }
+              }
+            }
+
+            if ($updated) {
+              $xml.Save($file)
+              Write-Host "Updated: $file"
+            }
+          }
+
+      - name: Copy StructParser Tools (DEBUG MODE)
+        shell: powershell
+        run: |
+          $src = "I:\gp5\Utilities\Bin"
+          $dst = "$env:RUNNER_TEMP"
+
+          Write-Host "==== DEBUG: Copy StructParser Tools ===="
+          Write-Host "Source Path: $src"
+          Write-Host "Destination Path: $dst"
+
+          if (-Not (Test-Path $src)) {
             Write-Error "❌ ERROR: Source folder NOT FOUND: $src"
             exit 1
-        } else {
-            Write-Host "✔ Source folder exists."
-        }
+          }
 
-        # 检查文件
-        $files = @(
+          $files = @(
             "StructParser.exe",
             "ProjectManager.exe",
             "structparser_settings.txt"
-        )
+          )
 
-        foreach ($f in $files) {
+          foreach ($f in $files) {
             $full = Join-Path $src $f
             if (-Not (Test-Path $full)) {
-                Write-Error "❌ ERROR: Missing file: $full"
-                exit 1
-            } else {
-                Write-Host "✔ Found file: $full"
+              Write-Error "❌ ERROR: Missing file: $full"
+              exit 1
             }
-        }
+          }
 
-        Write-Host "==== Start Copy ===="
+          foreach ($f in $files) {
+            Copy-Item (Join-Path $src $f) $dst -Force
+            Write-Host "✔ Copied: $f"
+          }
 
-        foreach ($f in $files) {
-            $full = Join-Path $src $f
-            Copy-Item $full -Destination $dst -Force
+          Write-Host "==== ALL FILES COPIED SUCCESSFULLY ===="
 
-            if (Test-Path "$dst\$f") {
-                Write-Host "✔ Copied: $f → $dst"
-            } else {
-                Write-Error "❌ Failed to copy: $f"
-                exit 1
-            }
-        }
+      - name: Build Debug Win32
+        shell: cmd
+        run: |
+          echo ==== Load VS2022 ====
+          call "I:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" x86
 
-        Write-Host "==== ALL FILES COPIED SUCCESSFULLY ===="
+          echo ==== MSBuild Start ====
+          "I:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" ^
+            Core\GameServer\CoreGameServer.sln ^
+            /t:Rebuild ^
+            /p:Configuration=Debug ^
+            /p:Platform=Win32 ^
+            /p:PlatformToolset=v143 ^
+            /m
