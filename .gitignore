@@ -1,0 +1,78 @@
+# Build outputs
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.idb
+*.pch
+*.res
+*.sbr
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.db
+*.opendb
+*.aps
+*.ncb
+*.plg
+*.opt
+*.clw
+*.tags
+*.VC.db
+*.VC.VC.opendb
+
+# Build directories
+Debug/
+Release/
+x64/
+Win32/
+Full Debug/
+Code Coverage/
+*.dir/
+*.vs/
+
+# Auto-generated files
+AutoGen/
+**/AutoGen/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IntelliSense
+*.VC.db
+*.VC.VC.opendb
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Reports
+*.md
+!README.md
+

@@ -1,0 +1,151 @@
+name: Build GameServer
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+      
+    - name: Find MSBuild
+      id: find-msbuild
+      shell: pwsh
+      run: |
+        # Try to find MSBuild using vswhere
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+          $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          if ($msbuild -and (Test-Path $msbuild)) {
+            Write-Host "Found MSBuild via vswhere: $msbuild"
+            echo "MSBUILD_PATH=$msbuild" >> $env:GITHUB_ENV
+            exit 0
+          }
+        }
+        
+        # Fallback: try common paths
+        $paths = @(
+          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
+          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
+          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
+          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
+          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe"
+        )
+        
+        foreach ($path in $paths) {
+          if (Test-Path $path) {
+            Write-Host "Found MSBuild: $path"
+            echo "MSBUILD_PATH=$path" >> $env:GITHUB_ENV
+            exit 0
+          }
+        }
+        
+        Write-Host "MSBuild not found, will use msbuild from PATH"
+        echo "MSBUILD_PATH=msbuild" >> $env:GITHUB_ENV
+        
+    - name: Build GameServer (Debug Win32)
+      shell: pwsh
+      run: |
+        $msbuild = $env:MSBUILD_PATH
+        if (-not $msbuild -or $msbuild -eq "msbuild") {
+          # Try to find MSBuild
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          }
+          
+          if (-not $msbuild -or -not (Test-Path $msbuild)) {
+            $msbuild = "msbuild"
+          }
+        }
+        
+        Write-Host "Using MSBuild: $msbuild"
+        Write-Host "Working directory: $(Get-Location)"
+        Write-Host "Solution path: package\Core\GameServer\CoreGameServer.sln"
+        
+        # Verify solution file exists
+        if (-not (Test-Path "package\Core\GameServer\CoreGameServer.sln")) {
+          Write-Error "Solution file not found!"
+          exit 1
+        }
+        
+        # Build with error handling
+        $buildArgs = @(
+          "package\Core\GameServer\CoreGameServer.sln",
+          "/p:Configuration=Debug",
+          "/p:Platform=Win32",
+          "/m",
+          "/v:minimal",
+          "/nologo",
+          "/fl",
+          "/flp:logfile=build.log;verbosity=detailed"
+        )
+        
+        & $msbuild $buildArgs
+        
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "Build failed. Checking build.log..."
+          if (Test-Path "build.log") {
+            Get-Content "build.log" -Tail 50
+          }
+          exit $LASTEXITCODE
+        }
+        
+        Write-Host "Build completed successfully!"
+          
+    - name: Build GameServer (Full Debug Win32)
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        $msbuild = $env:MSBUILD_PATH
+        if (-not $msbuild -or $msbuild -eq "msbuild") {
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+          }
+          if (-not $msbuild -or -not (Test-Path $msbuild)) {
+            $msbuild = "msbuild"
+          }
+        }
+        
+        Write-Host "Building Full Debug configuration..."
+        & $msbuild `
+          package\Core\GameServer\CoreGameServer.sln `
+          /p:Configuration="Full Debug" `
+          /p:Platform=Win32 `
+          /m `
+          /v:minimal `
+          /nologo
+          
+    - name: Upload build artifacts
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: GameServer-Debug-Win32
+        path: |
+          package/Core/GameServer/Debug/GameServer.exe
+          package/Core/GameServer/Full Debug/GameServerFD.exe
+        retention-days: 7
+        if-no-files-found: warn
+        
+    - name: List build outputs
+      if: always()
+      run: |
+        Write-Host "Searching for build outputs..."
+        Get-ChildItem -Path package -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+          Write-Host "Found: $($_.FullName)"
+        }
+        Get-ChildItem -Path package -Recurse -Filter "*.lib" -ErrorAction SilentlyContinue | Select-Object -First 10 | ForEach-Object {
+          Write-Host "Found lib: $($_.FullName)"
+        }
+
