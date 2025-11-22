@@ -1,29 +1,3 @@
-name: Build GameServer
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: self-hosted
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    # Allow PowerShell scripts
-    - name: Set Execution Policy
-      shell: powershell
-      run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        Set-ExecutionPolicy Bypass -Scope CurrentUser -Force
-        Write-Host "Execution policy OK"
-
-    # Fix all WindowsTargetPlatformVersion using XML DOM (no < > issues)
     - name: Fix Windows SDK
       shell: powershell
       run: |
@@ -32,46 +6,28 @@ jobs:
 
         Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
             $file = $_.FullName
-            $xml = [xml](Get-Content $file)
+            Write-Host "Processing $file"
 
-            # locate the tag
-            $node = $xml.Project.PropertyGroup.WindowsTargetPlatformVersion
+            # Load xml (ignore BOM)
+            $content = Get-Content $file -Raw
+            $xml = [xml]$content
 
-            if ($node) {
-                $node.InnerText = $sdk
-                $xml.Save($file)
-                Write-Host "Fixed: $file"
+            $updated = $false
+
+            # Loop ALL PropertyGroups
+            foreach ($pg in $xml.Project.PropertyGroup) {
+                foreach ($node in $pg.ChildNodes) {
+                    if ($node.Name -eq "WindowsTargetPlatformVersion") {
+                        $node.InnerText = $sdk
+                        $updated = $true
+                    }
+                }
             }
-            else {
-                Write-Host "Skipped (no tag): $file"
+
+            if ($updated) {
+                $xml.Save($file)
+                Write-Host "Updated SDK in: $file"
+            } else {
+                Write-Host "No SDK tag in: $file (skip)"
             }
         }
-
-    # Find sln
-    - name: Find SLN
-      id: sln
-      shell: powershell
-      run: |
-        $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-        if (-not $sln) { Write-Error "CoreGameServer.sln not found"; exit 1 }
-        echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
-
-    # Build project
-    - name: Build Debug Win32
-      shell: powershell
-      run: |
-        msbuild `
-          "${{ steps.sln.outputs.file }}" `
-          /t:Rebuild `
-          /p:Configuration=Debug `
-          /p:Platform=Win32 `
-          /p:PlatformToolset=v143 `
-          /m
-
-    - name: Upload Build Output
-      uses: actions/upload-artifact@v4
-      with:
-        name: GameServer-Debug
-        path: |
-          **/Debug/*.exe
-          **/Debug/*.dll
