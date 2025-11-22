@@ -16,18 +16,9 @@ jobs:
       uses: actions/checkout@v4
 
     - name: 安装 MSVC 14.34 工具集
-      shell: cmd
-      run: |
-        echo "========================================"
-        echo "安装 MSVC 14.34 工具集..."
-        echo "========================================"
-        choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --includeOptional --version 17.4.4" -y
-        refreshenv
-        echo "安装完成。"
-
-    - name: 配置 MSVC 开发环境
       uses: ilammy/msvc-dev-cmd@v1
       with:
+        # 这里我们直接指定工具集版本，该 Action 会自动尝试安装
         toolset: "14.34"
 
     - name: 调试 - 环境信息
