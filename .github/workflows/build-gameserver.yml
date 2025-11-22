@@ -1,19 +1,78 @@
-- name: Disable CodeAnalysis for ALL vcxproj
-  shell: pwsh
-  run: |
-    Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-      $file = $_.FullName
-      $xml = Get-Content $file -Raw
+name: Build GP5 GameServer Win32 Debug
 
-      # 关闭 CodeAnalysis / PREfast
-      if ($xml -notmatch 'DisableCodeAnalysis') {
-        $xml = $xml -replace '</PropertyGroup>', @"
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+
+    # 设置 MSVC 2022 + 固定 14.44 工具链
+    - name: Setup MSVC 2022 (14.44)
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x86
+        toolset: 14.44
+
+    # ============================
+    #  修复所有 vcxproj 的 XML
+    #  删除旧式 PreBuildEvent
+    #  插入 DisableCodeAnalysis
+    # ============================
+    - name: Repair all vcxproj (XML + Disable CodeAnalysis)
+      shell: pwsh
+      run: |
+        Write-Host "=== 修复所有 vcxproj 设置 ==="
+
+        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+          $file = $_.FullName
+          $xml = Get-Content $file -Raw
+
+          $orig = $xml
+
+          # 删除 VS2010 遗留 PreBuildEvent
+          $xml = $xml -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>', ''
+
+          # 强制关闭 CodeAnalysis / PREfast
+          if ($xml -notmatch 'DisableCodeAnalysis') {
+            $xml = $xml -replace '</PropertyGroup>', @"
   <DisableCodeAnalysis>true</DisableCodeAnalysis>
   <EnablePREfast>false</EnablePREfast>
 </PropertyGroup>
 "@
-      }
+          }
 
-      Set-Content -Path $file -Value $xml -Encoding UTF8
-      Write-Host "✔ 已禁用 CodeAnalysis：$file"
-    }
+          # 保存回文件
+          if ($xml -ne $orig) {
+            Set-Content -Path $file -Value $xml -Encoding UTF8 -NoNewline
+            Write-Host "✔ 修复: $file"
+          }
+        }
+
+    # ============================
+    #   编译 Win32 Debug v143
+    # ============================
+    - name: Build CoreGameServer Win32 Debug
+      shell: pwsh
+      run: |
+        Write-Host "=== 开始 MSBuild Win32 Debug ==="
+
+        # 显示 include 链（调试用）
+        $env:CL="/showIncludes"
+
+        MSBuild.exe `
+          "Core/GameServer/CoreGameServer.sln" `
+          /t:Rebuild `
+          /p:Configuration=Debug `
+          /p:Platform=Win32 `
+          /p:PlatformToolset=v143 `
+          /m
+
+    - name: Build Done
+      run: echo "✔ Build completed successfully!"
