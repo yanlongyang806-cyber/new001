@@ -19,7 +19,6 @@ jobs:
       with:
         arch: x86
 
-    # 修复 vcxproj 残留设置（删除 PreBuildEvent、关闭 CodeAnalysis）
     - name: Repair vcxproj files
       shell: pwsh
       run: |
@@ -29,16 +28,16 @@ jobs:
           $xml = Get-Content $f.FullName -Raw
           $orig = $xml
 
-          # 删除旧 VS PreBuildEvent 可能导致 Actions 崩溃
+          # 删除 PreBuildEvent
           $xml = $xml -replace '(?s)<PreBuildEvent>.*?</PreBuildEvent>', ''
 
-          # 禁用代码分析
+          # 注入禁用 CodeAnalysis 的配置（必须用连续 here-string）
           if ($xml -notmatch 'DisableCodeAnalysis') {
-            $xml = $xml -replace '</PropertyGroup>', @"
+            $insert = @"
   <DisableCodeAnalysis>true</DisableCodeAnalysis>
   <EnablePREfast>false</EnablePREfast>
-</PropertyGroup>
 "@
+            $xml = $xml -replace '</PropertyGroup>', "$insert</PropertyGroup>"
           }
 
           if ($xml -ne $orig) {
