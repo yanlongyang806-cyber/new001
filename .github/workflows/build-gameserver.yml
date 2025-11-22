@@ -15,55 +15,58 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    # Remove execution policy restrictions
-    - name: Allow PowerShell scripts
+    # Allow PowerShell scripts
+    - name: Set Execution Policy
       shell: powershell
       run: |
-        powershell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope Process -Force"
-        powershell -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope CurrentUser -Force"
-        Write-Host "ExecutionPolicy OK"
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        Set-ExecutionPolicy Bypass -Scope CurrentUser -Force
+        Write-Host "Execution policy OK"
 
-    # Fix SDK version
-    - name: Fix Windows SDK (10.0.19041.0)
+    # Fix all WindowsTargetPlatformVersion using XML DOM (no < > issues)
+    - name: Fix Windows SDK
       shell: powershell
       run: |
-        powershell -ExecutionPolicy Bypass -Command "
-          Write-Host 'Fixing SDK versions...';
-          $sdk = '10.0.19041.0';
-          Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
-            $file = $_.FullName;
-            (Get-Content $file) `
-              -replace '<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>',
-                       "<WindowsTargetPlatformVersion>$sdk</WindowsTargetPlatformVersion>" `
-              | Set-Content $file;
-            Write-Host ('Fixed: ' + $file);
-          }
-        "
+        $sdk = "10.0.19041.0"
+        Write-Host "Fixing SDK version to $sdk"
 
-    # Find solution
+        Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
+            $file = $_.FullName
+            $xml = [xml](Get-Content $file)
+
+            # locate the tag
+            $node = $xml.Project.PropertyGroup.WindowsTargetPlatformVersion
+
+            if ($node) {
+                $node.InnerText = $sdk
+                $xml.Save($file)
+                Write-Host "Fixed: $file"
+            }
+            else {
+                Write-Host "Skipped (no tag): $file"
+            }
+        }
+
+    # Find sln
     - name: Find SLN
       id: sln
       shell: powershell
       run: |
-        powershell -ExecutionPolicy Bypass -Command "
-          $sln = Get-ChildItem -Recurse -Filter 'CoreGameServer.sln' | Select-Object -First 1;
-          if (-not $sln) { Write-Error 'CoreGameServer.sln not found'; exit 1 };
-          echo ('file=' + $sln.FullName) >> $env:GITHUB_OUTPUT;
-        "
+        $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
+        if (-not $sln) { Write-Error "CoreGameServer.sln not found"; exit 1 }
+        echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
 
-    # Build
+    # Build project
     - name: Build Debug Win32
       shell: powershell
       run: |
-        powershell -ExecutionPolicy Bypass -Command "
-          msbuild `
-            '${{ steps.sln.outputs.file }}' `
-            /t:Rebuild `
-            /p:Configuration=Debug `
-            /p:Platform=Win32 `
-            /p:PlatformToolset=v143 `
-            /m;
-        "
+        msbuild `
+          "${{ steps.sln.outputs.file }}" `
+          /t:Rebuild `
+          /p:Configuration=Debug `
+          /p:Platform=Win32 `
+          /p:PlatformToolset=v143 `
+          /m
 
     - name: Upload Build Output
       uses: actions/upload-artifact@v4
