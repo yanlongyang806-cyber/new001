@@ -9,37 +9,56 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2019    # ← 关键！必须换成 2019！
+    runs-on: windows-latest
 
     steps:
-    - name: Checkout
+    - name: Checkout Repo
       uses: actions/checkout@v4
 
-    - name: 初始化 VS2019 工具链 (v142)
-      uses: ilammy/msvc-dev-cmd@v1
-      with:
-        toolset: 142
-
-    - name: 自动修复所有项目的 Windows SDK 版本
+    - name: 安装 VS Build Tools（MSVC v143 + Windows SDK）
       shell: pwsh
       run: |
-        Write-Host "=== 自动修复 Windows SDK 版本 ==="
-        $sdk = "10.0.17763.0"
+        Write-Host "=== 安装 VS Build Tools（需要 3~5 分钟） ==="
+
+        Invoke-WebRequest `
+          -Uri "https://aka.ms/vs/17/release/vs_BuildTools.exe" `
+          -OutFile "vs_buildtools.exe"
+
+        Start-Process ".\vs_buildtools.exe" `
+          -ArgumentList `
+            "--quiet",
+            "--wait",
+            "--norestart",
+            "--nocache",
+            "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "--add", "Microsoft.VisualStudio.Component.Windows10SDK.20348",
+            "--add", "Microsoft.VisualStudio.Component.VC.CoreBuildTools" `
+          -NoNewWindow -Wait
+
+    - name: 初始化 MSVC 环境
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x86
+        toolset: 143
+
+    - name: 修复所有项目 SDK（强制降级到 10.0.20348.0）
+      shell: pwsh
+      run: |
+        $sdk = "10.0.20348.0"
         Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
           $file = $_.FullName
-          Write-Host "修复: $file"
           (Get-Content $file) `
             -replace "<WindowsTargetPlatformVersion>.*?</WindowsTargetPlatformVersion>",
                      "<WindowsTargetPlatformVersion>$sdk</WindowsTargetPlatformVersion>" `
             | Set-Content $file
+          Write-Host "修复: $file"
         }
 
-    - name: 查找解决方案
+    - name: 查找解决方案文件
       id: sln
       shell: pwsh
       run: |
         $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
-        if (-not $sln) { Write-Error "未找到 CoreGameServer.sln"; exit 1 }
         echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
 
     - name: 编译 Win32 Debug
@@ -50,7 +69,7 @@ jobs:
           /t:Rebuild `
           /p:Configuration=Debug `
           /p:Platform=Win32 `
-          /p:PlatformToolset=v142 `
+          /p:PlatformToolset=v143 `
           /m
 
     - name: 上传构建产物
