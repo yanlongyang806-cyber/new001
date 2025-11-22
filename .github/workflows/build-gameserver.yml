@@ -1,28 +1,62 @@
-- name: Repair broken PreBuildEvent XML (FULL FIX)
+- name: Repair PreBuildEvent using XML parser
   shell: powershell
   run: |
-    Write-Host "=== Repairing broken PreBuildEvent XML across all vcxproj ==="
+    Write-Host "=== XML REPAIR: Fixing PreBuildEvent in all vcxproj ==="
+
+    Add-Type -AssemblyName System.Xml
 
     Get-ChildItem -Recurse -Filter *.vcxproj | ForEach-Object {
       $file = $_.FullName
-      $xml = Get-Content $file -Raw -Encoding UTF8
-      
-      $orig = $xml
+      $xml = New-Object System.Xml.XmlDocument
+      $xml.PreserveWhitespace = $true
 
-      # 1. 删除所有 <Project> 下的孤立 PreBuildEvent
-      $xml = $xml -replace '(?s)<Project>[\s\r\n]*<PreBuildEvent>.*?</PreBuildEvent>', '<Project>'
-
-      # 2. 删除所有不在 ItemDefinitionGroup 里的 PreBuildEvent
-      $xml = $xml -replace '(?s)(</ImportGroup>)(\s*<PreBuildEvent>.*?</PreBuildEvent>)', '$1'
-
-      # 3. 如果项目没有 PreBuildEvent，则补到正确位置
-      if ($xml -notmatch '<PreBuildEvent>') {
-        # 加一个空的，防止构建器报缺少节点
-        $xml = $xml -replace '(</ItemDefinitionGroup>)', "`n    <PreBuildEvent></PreBuildEvent>`n$1"
+      try {
+        $xml.Load($file)
+      } catch {
+        Write-Host "❌ XML parse failed, skipping file: $file"
+        return
       }
 
-      if ($xml -ne $orig) {
-        Write-Host "✔ Fixed PreBuildEvent structure: $file"
-        Set-Content -Path $file -Value $xml -Encoding UTF8 -NoNewline
+      $project = $xml.Project
+      if (-not $project) { return }
+
+      $modified = $false
+
+      # 1. 删除所有直接出现在 <Project> 下的 PreBuildEvent (非法)
+      foreach ($node in $project.ChildNodes) {
+        if ($node.Name -eq 'PreBuildEvent') {
+          $project.RemoveChild($node)
+          $modified = $true
+          Write-Host "✔ Removed illegal PreBuildEvent at root: $file"
+        }
+      }
+
+      # 2. 找到正确的插入位置（ItemDefinitionGroup/ClCompile）
+      $itemDef = $project.ItemDefinitionGroup | Where-Object { $_.ClCompile }
+      if (-not $itemDef) {
+        # 如果不存在，创建一个
+        $itemDef = $xml.CreateElement("ItemDefinitionGroup")
+        $project.AppendChild($itemDef) | Out-Null
+        $compile = $xml.CreateElement("ClCompile")
+        $itemDef.AppendChild($compile) | Out-Null
+        $modified = $true
+      } else {
+        $compile = $itemDef.ClCompile
+      }
+
+      # 3. 如果没有 PreBuildEvent，则创建一个
+      if (-not $compile.PreBuildEvent) {
+        $pre = $xml.CreateElement("PreBuildEvent")
+        $text = $xml.CreateTextNode("")
+        $pre.AppendChild($text) | Out-Null
+        $compile.AppendChild($pre) | Out-Null
+        $modified = $true
+        Write-Host "✔ Added missing PreBuildEvent: $file"
+      }
+
+      # 保存修改
+      if ($modified) {
+        $xml.Save($file)
+        Write-Host "✔ Saved fixed vcxproj: $file"
       }
     }
