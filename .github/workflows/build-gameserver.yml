@@ -15,36 +15,75 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
       
-    - name: 安装 MSVC 14.34 工具集
-      uses: ilammy/msvc-dev-cmd@v1
-      with:
-        toolset: "14.34"  # Visual Studio 2022 工具集
-        arch: x86  # 32位架构（Win32）
+    - name: 设置 MSBuild 环境
+      uses: microsoft/setup-msbuild@v2
       
-    - name: 验证 MSBuild 环境
-      shell: pwsh
+    - name: 初始化 Visual Studio 开发环境
+      shell: cmd
       run: |
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "验证 MSBuild 环境" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host ""
+        @echo ========================================
+        @echo 初始化 Visual Studio 开发环境
+        @echo ========================================
+        @echo.
         
-        # 检查 MSBuild 是否可用
-        $msbuildVersion = msbuild -version 2>&1
-        if ($LASTEXITCODE -eq 0) {
-          Write-Host "✓ MSBuild 可用" -ForegroundColor Green
-          Write-Host "版本信息:" -ForegroundColor Yellow
-          $msbuildVersion | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
-        } else {
-          Write-Host "✗ MSBuild 不可用" -ForegroundColor Red
-          exit 1
-        }
+        REM 查找 Visual Studio 安装路径
+        set VSWHERE="%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+        if not exist %VSWHERE% (
+          echo [错误] vswhere.exe 未找到
+          exit /b 1
+        )
         
-        Write-Host ""
-        Write-Host "检查环境变量..." -ForegroundColor Yellow
-        Write-Host "  VCINSTALLDIR: $env:VCINSTALLDIR" -ForegroundColor Gray
-        Write-Host "  VCToolsVersion: $env:VCToolsVersion" -ForegroundColor Gray
-        Write-Host ""
+        REM 获取 VS2022 安装路径
+        for /f "usebackq tokens=*" %%i in (`%VSWHERE% -latest -version "[17.0,18.0)" -property installationPath`) do set VSPATH=%%i
+        
+        if not defined VSPATH (
+          echo [错误] 未找到 Visual Studio 2022
+          exit /b 1
+        )
+        
+        echo [成功] 找到 Visual Studio: %VSPATH%
+        
+        REM 设置 vcvarsall.bat 路径
+        set VCVARSALL=%VSPATH%\VC\Auxiliary\Build\vcvarsall.bat
+        
+        if not exist "%VCVARSALL%" (
+          echo [错误] vcvarsall.bat 未找到: %VCVARSALL%
+          exit /b 1
+        )
+        
+        echo [成功] vcvarsall.bat 路径: %VCVARSALL%
+        echo.
+        echo 正在初始化开发环境（x86）...
+        
+        REM 调用 vcvarsall.bat 初始化环境
+        call "%VCVARSALL%" x86
+        
+        if errorlevel 1 (
+          echo [错误] 初始化开发环境失败
+          exit /b 1
+        )
+        
+        echo [成功] 开发环境已初始化
+        echo.
+        echo 关键环境变量:
+        echo   VCINSTALLDIR=%VCINSTALLDIR%
+        echo   VCToolsVersion=%VCToolsVersion%
+        echo   Platform=%Platform%
+        echo.
+        
+        REM 验证 MSBuild
+        where msbuild >nul 2>&1
+        if errorlevel 1 (
+          echo [警告] MSBuild 不在 PATH 中
+        ) else (
+          echo [成功] MSBuild 在 PATH 中
+          msbuild -version | findstr /i "version"
+        )
+        
+        REM 将环境变量导出到后续步骤
+        echo VCINSTALLDIR=%VCINSTALLDIR%>>%GITHUB_ENV%
+        echo VCToolsVersion=%VCToolsVersion%>>%GITHUB_ENV%
+        echo Platform=%Platform%>>%GITHUB_ENV%
         
     - name: 调试 - 显示目录结构
       shell: pwsh
@@ -119,12 +158,30 @@ jobs:
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host ""
         
-        # 使用 msbuild（已在 PATH 中，由 ilammy/msvc-dev-cmd 设置）
-        $msbuild = "msbuild"
+        # 查找 MSBuild
+        $msbuild = Get-Command msbuild -ErrorAction SilentlyContinue
+        if (-not $msbuild) {
+          # 如果不在 PATH 中，尝试查找
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            $msbuildPath = & $vswhere -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe | Select-Object -First 1
+            if ($msbuildPath -and (Test-Path $msbuildPath)) {
+              $msbuild = $msbuildPath
+            }
+          }
+          
+          if (-not $msbuild) {
+            $msbuild = "msbuild"
+          }
+        } else {
+          $msbuild = $msbuild.Source
+        }
         
         Write-Host "使用 MSBuild: $msbuild" -ForegroundColor Green
         Write-Host "工作目录: $(Get-Location)" -ForegroundColor Green
-        Write-Host "工具集版本: $env:VCToolsVersion" -ForegroundColor Green
+        if ($env:VCToolsVersion) {
+          Write-Host "工具集版本: $env:VCToolsVersion" -ForegroundColor Green
+        }
         Write-Host ""
         
         # 查找解决方案文件
@@ -275,8 +332,13 @@ jobs:
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host ""
         
-        # 使用 msbuild（已在 PATH 中，由 ilammy/msvc-dev-cmd 设置）
-        $msbuild = "msbuild"
+        # 查找 MSBuild
+        $msbuild = Get-Command msbuild -ErrorAction SilentlyContinue
+        if ($msbuild) {
+          $msbuild = $msbuild.Source
+        } else {
+          $msbuild = "msbuild"
+        }
         
         Write-Host "正在查找解决方案文件..." -ForegroundColor Yellow
         
