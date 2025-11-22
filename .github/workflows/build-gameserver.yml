@@ -1,3 +1,27 @@
+name: Build GameServer
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set Execution Policy
+      shell: powershell
+      run: |
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        Set-ExecutionPolicy Bypass -Scope CurrentUser -Force
+        Write-Host "ExecutionPolicy OK"
+
     - name: Fix Windows SDK
       shell: powershell
       run: |
@@ -8,13 +32,11 @@
             $file = $_.FullName
             Write-Host "Processing $file"
 
-            # Load xml (ignore BOM)
             $content = Get-Content $file -Raw
             $xml = [xml]$content
 
             $updated = $false
 
-            # Loop ALL PropertyGroups
             foreach ($pg in $xml.Project.PropertyGroup) {
                 foreach ($node in $pg.ChildNodes) {
                     if ($node.Name -eq "WindowsTargetPlatformVersion") {
@@ -31,3 +53,30 @@
                 Write-Host "No SDK tag in: $file (skip)"
             }
         }
+
+    - name: Find SLN
+      id: sln
+      shell: powershell
+      run: |
+        $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
+        if (-not $sln) { Write-Error "CoreGameServer.sln not found"; exit 1 }
+        echo "file=$($sln.FullName)" >> $env:GITHUB_OUTPUT
+
+    - name: Build Debug Win32
+      shell: powershell
+      run: |
+        msbuild `
+          "${{ steps.sln.outputs.file }}" `
+          /t:Rebuild `
+          /p:Configuration=Debug `
+          /p:Platform=Win32 `
+          /p:PlatformToolset=v143 `
+          /m
+
+    - name: Upload Build Output
+      uses: actions/upload-artifact@v4
+      with:
+        name: GameServer-Debug
+        path: |
+          **/Debug/*.exe
+          **/Debug/*.dll
