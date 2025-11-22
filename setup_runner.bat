@@ -17,7 +17,7 @@ if %errorLevel% neq 0 (
 
 REM 设置仓库信息
 set REPO_URL=https://github.com/yanlongyang806-cyber/new001
-set RUNNER_VERSION=2.309.0
+set RUNNER_VERSION=2.329.0
 
 echo [1/5] 创建 runner 目录...
 if exist "actions-runner" (
