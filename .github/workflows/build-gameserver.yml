@@ -15,72 +15,46 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
 
-    - name: 安装 MSVC 14.34 工具集
+    - name: 初始化 VS2022 环境（v143 工具集）
       uses: ilammy/msvc-dev-cmd@v1
       with:
-        # 这里我们直接指定工具集版本，该 Action 会自动尝试安装
-        toolset: "14.34"
+        toolset: v143   # ← 不要写 14.34
 
     - name: 调试 - 环境信息
       shell: pwsh
       run: |
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "环境信息" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "VCToolsVersion: $env:VCToolsVersion"
-        Write-Host "Platform: $env:Platform"
-        Write-Host "MSBuild Path: $(Get-Command msbuild | Select-Object -ExpandProperty Source)"
-        msbuild -version
+        Write-Host "VCToolsVersion = $env:VCToolsVersion"
+        Write-Host "VCINSTALLDIR = $env:VCINSTALLDIR"
         cl.exe
+        msbuild -version
 
-    - name: 调试 - 显示目录结构
+    - name: 找到 CoreGameServer.sln
+      id: find_sln
       shell: pwsh
       run: |
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "项目目录结构" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
-        Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object FullName
-        Write-Host "----------------------------------------"
-        Get-ChildItem
+        $sln = Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1
+        if (-not $sln) {
+          Write-Error "找不到 CoreGameServer.sln"
+          exit 1
+        }
+        echo "sln=$($sln.FullName)" >> $env:GITHUB_OUTPUT
 
     - name: 编译 GameServer (Debug Win32)
       shell: pwsh
       run: |
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "开始编译 GameServer (Debug Win32)" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
+        $solutionPath = "${{ steps.find_sln.outputs.sln }}"
+        Write-Host "开始编译: $solutionPath"
         
-        $solutionPath = (Get-ChildItem -Recurse -Filter "CoreGameServer.sln" | Select-Object -First 1).FullName
-        
-        if (-not $solutionPath) {
-          Write-Error "未找到解决方案文件 CoreGameServer.sln"
-          exit 1
-        }
-        
-        Write-Host "找到解决方案: $solutionPath" -ForegroundColor Green
-        
-        $buildArgs = @(
-          "`"$solutionPath`"",
-          "/t:Rebuild",
-          "/p:Configuration=Debug",
-          "/p:Platform=Win32",
-          "/p:PlatformToolset=v143,Version=14.34",
-          "/m",
-          "/v:detailed"
-        )
-        
-        Write-Host "执行命令: msbuild $buildArgs"
-        & msbuild $buildArgs
-        
-        if ($LASTEXITCODE -ne 0) {
-          Write-Host "========================================" -ForegroundColor Red
-          Write-Host "编译失败！" -ForegroundColor Red
-          Write-Host "========================================" -ForegroundColor Red
-          exit $LASTEXITCODE
-        }
+        msbuild `
+          "$solutionPath" `
+          /t:Rebuild `
+          /p:Configuration=Debug `
+          /p:Platform=Win32 `
+          /p:PlatformToolset=v143 `
+          /m `
+          /v:minimal
 
     - name: 上传构建产物
-      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: GameServer-Debug-Win32
@@ -94,7 +68,6 @@ jobs:
       if: always()
       shell: pwsh
       run: |
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "构建输出文件列表" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
-        Get-ChildItem -Recurse -Include *.exe, *.dll | Where-Object { $_.FullName -match 'Debug' } | Select-Object FullName, Length
+        Get-ChildItem -Recurse -Include *.exe, *.dll | 
+        Where-Object { $_.FullName -match 'Debug' } |
+        Select-Object FullName, Length
